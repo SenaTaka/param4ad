@@ -210,11 +210,22 @@ def fetch_and_apply_params(url: str) -> None:
     MOTOR_FREQ        = int(flt("MOTOR_FREQ",       MOTOR_FREQ))
     SPEED_CMD_SCALE   = flt("SPEED_CMD_SCALE",      SPEED_CMD_SCALE)
 
-    # 適用後の重要パラメータを表示
-    print("[API] params applied:", flush=True)
-    for k in ("FGM_CLEAR_TH", "FGM_FOV_DEG", "FGM_BUBBLE_RADIUS",
-              "KP_GAP_ANGLE", "BASE_SPEED", "SPEED_MAX", "PIVOT_ENABLE"):
-        print(f"[API]   {k} = {d.get(k, '(default)')}", flush=True)
+    # 適用後の全パラメータをグループ別に表示
+    print("[PARAM] ========== 適用パラメータ（起動時のみ反映）==========", flush=True)
+    print(f"[PARAM]  FTGコア      FOV={FGM_FOV_DEG}° "
+          f"CLEAR_TH={FGM_CLEAR_TH}m  MIN_GAP={FGM_MIN_GAP_DEG}°  "
+          f"TARGET={FGM_TARGET}  ENABLE={FGM_ENABLE}", flush=True)
+    print(f"[PARAM]  Bubble       RADIUS={FGM_BUBBLE_RADIUS}m  "
+          f"MIN={FGM_BUBBLE_MIN_DEG}°  MAX={FGM_BUBBLE_MAX_DEG}°", flush=True)
+    print(f"[PARAM]  速度         BASE={BASE_SPEED}  MAX={SPEED_MAX}  "
+          f"TURN={TURN_SPEED}  STEER_DROP={SPEED_STEER_DROP}  FRONT_DROP={SPEED_FRONT_DROP}", flush=True)
+    print(f"[PARAM]  減速距離     SLOW={FRONT_SLOW}m  STOP={FRONT_STOP}m", flush=True)
+    print(f"[PARAM]  操舵         KP={KP_GAP_ANGLE}  MAX_STEER={MAX_STEER}", flush=True)
+    print(f"[PARAM]  Pivot        ENABLE={PIVOT_ENABLE}  TH={PIVOT_STEER_TH}  "
+          f"SOFT={PIVOT_SOFT_TH}  MIN_SPEED={PIVOT_MIN_SPEED}", flush=True)
+    print(f"[PARAM]  HW           FORWARD={FORWARD_DEG}°  "
+          f"LIDAR_DX={LIDAR_DX}m  MOTOR_FREQ={MOTOR_FREQ}Hz  SCALE={SPEED_CMD_SCALE}", flush=True)
+    print("[PARAM] ========================================================", flush=True)
 
 
 def poll_command(ap, url: str) -> None:
