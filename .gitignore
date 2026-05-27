@@ -3,3 +3,5 @@ node_modules/
 .env.local
 *.pyc
 __pycache__/
+.vercel
+tsconfig.tsbuildinfo
