@@ -112,6 +112,36 @@ PWMB, BIN1, BIN2 = 16, 26, 19
 # を設定するとパラメータを取得し、コマンド(RUN/PAUSE)を監視する
 
 
+def test_api_connection(url: str) -> bool:
+    """起動時に /api/params と /api/command の両方をテストして結果を表示する。"""
+    print(f"[API] ===== 接続テスト =====", flush=True)
+    print(f"[API] URL: {url}", flush=True)
+    all_ok = True
+
+    for path in ("params", "command"):
+        endpoint = f"{url}/api/{path}"
+        try:
+            req = urllib.request.Request(
+                endpoint, headers={"User-Agent": "raspi-ftg/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as r:
+                body = r.read()
+                d = json.loads(body)
+            print(f"[API]   /api/{path}  OK  → {d}", flush=True)
+        except urllib.error.URLError as e:
+            print(f"[API]   /api/{path}  FAIL URLError: {e.reason}", flush=True)
+            all_ok = False
+        except Exception as e:
+            print(f"[API]   /api/{path}  FAIL {type(e).__name__}: {e}", flush=True)
+            all_ok = False
+
+    if all_ok:
+        print("[API] ===== 接続 OK =====", flush=True)
+    else:
+        print("[API] ===== 接続 FAIL — ネットワーク/URL を確認 =====", flush=True)
+    return all_ok
+
+
 def fetch_and_apply_params(url: str) -> None:
     """Vercel API からパラメータを取得してグローバル変数に反映する。"""
     global FORWARD_DEG, LIDAR_DX, LIDAR_DY
@@ -224,10 +254,10 @@ def poll_command(ap, url: str) -> None:
                 print(f"[API] command: {_last_cmd} → {cmd}  [{state}]", flush=True)
                 _last_cmd = cmd
 
-            # 30秒ごとに生存確認ログ
-            if _ok_count % 30 == 0:
-                state = "受付中" if armed else "待機中"
-                print(f"[API] polling alive  cmd={cmd}  armed={armed}  ok={_ok_count}  [{state}]", flush=True)
+            # 10秒ごとに生存確認ログ
+            if _ok_count % 10 == 0:
+                state = "受付中" if armed else "待機中(g キーで受付開始)"
+                print(f"[API] polling ok  cmd={cmd}  armed={armed}  [{state}]", flush=True)
 
             # armed のときだけ UI コマンドを反映
             if not armed:
@@ -912,8 +942,11 @@ def main():
 
     print("=== 自動運転 (LiDAR + PWM) : Follow the Gap ===")
     if _server_url:
-        print(f"[API] PARAM_SERVER_URL = {_server_url}")
-        fetch_and_apply_params(_server_url)
+        _api_ok = test_api_connection(_server_url)
+        if _api_ok:
+            fetch_and_apply_params(_server_url)
+        else:
+            print("[API] 接続失敗のためローカルパラメータを使用", flush=True)
     else:
         print("[API] PARAM_SERVER_URL 未設定 → ローカルパラメータを使用")
         print("      (設定例: export PARAM_SERVER_URL=https://param4ad.vercel.app)")
