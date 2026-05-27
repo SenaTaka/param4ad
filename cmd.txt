@@ -1,0 +1,5 @@
+  sudo PARAM_SERVER_URL=https://param4ad.vercel.app python3 ~/car/vivi/param.py
+
+
+
+    sudo PARAM_SERVER_URL=https://param4ad.vercel.app python3 ~/car/vivi/param1.py
