@@ -21,6 +21,7 @@ type ToggleField = {
   type: "toggle"
   key: keyof Params
   label: string
+  desc?: string
 }
 
 type SelectField = {
@@ -152,7 +153,10 @@ function Toggle({ field, value, onChange }: {
 }) {
   return (
     <div className="py-3 border-b border-gray-800 last:border-0 flex items-center justify-between">
-      <span className="text-sm font-medium text-gray-200">{field.label}</span>
+      <div className="flex-1 min-w-0 pr-3">
+        <span className="text-sm font-medium text-gray-200">{field.label}</span>
+        {field.desc && <span className="text-xs text-gray-500 ml-2">{field.desc}</span>}
+      </div>
       <button
         onClick={() => onChange(!value)}
         className={`relative w-12 h-6 rounded-full transition-colors ${value ? "bg-blue-600" : "bg-gray-700"}`}
