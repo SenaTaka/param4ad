@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import { DEFAULT_PARAMS, DEFAULT_COMMAND } from "@/lib/defaults"
 import type { Params, Command } from "@/lib/defaults"
 
@@ -41,7 +42,7 @@ const GROUPS: Group[] = [
     title: "FTG コア",
     fields: [
       { type: "toggle", key: "FGM_ENABLE",     label: "自動運転 ON/OFF",   desc: "ロボットが自動で走る機能をONかOFFにする" },
-      { type: "slider", key: "FGM_FOV_DEG",    label: "前を見る広さ",      unit: "°",  min: 45,  max: 180, step: 15,   desc: "ロボットが前を見る角度。広いほど左右までよく見える" },
+      { type: "slider", key: "FGM_FOV_DEG",    label: "前を見る広さ",      unit: "°",  min: 45,  max: 180, step: 5,   desc: "ロボットが前を見る角度。広いほど左右までよく見える" },
       { type: "slider", key: "FGM_CLEAR_TH",   label: "かべとみなす距離",  unit: "m",  min: 0.3, max: 3.0, step: 0.05, desc: "この距離より近いものをかべと判断する。大きいと遠くの物もかべ扱い" },
       { type: "slider", key: "FGM_MIN_GAP_DEG",label: "通れる隙間の最小幅",unit: "°",  min: 1,   max: 30,  step: 0.5,  desc: "この角度より狭い隙間は通れないと判断して無視する" },
       { type: "select", key: "FGM_TARGET",      label: "目指す場所",        options: ["FAR", "MID"], desc: "FAR＝一番遠い点を目指す　MID＝隙間の真ん中を目指す" },
@@ -267,7 +268,10 @@ export default function Home() {
     <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">FTG Param Controller</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">FTG Param Controller</h1>
+          <Link href="/explain" className="text-xs text-blue-400 hover:text-blue-300 underline">アルゴリズム解説 →</Link>
+        </div>
         <p className="text-sm text-gray-500 mt-0.5">LiDAR Follow-the-Gap — Raspberry Pi</p>
       </div>
 
