@@ -214,16 +214,25 @@ def poll_command(ap, url: str) -> None:
             _ok_count += 1
             _err_count = 0  # 成功でリセット
 
-            # コマンドが変わったときだけ表示
+            # armed 状態を読む
+            with ap.lock:
+                armed = ap.armed
+
+            # コマンドが変わったときだけ表示（armed 状態も付記）
             if cmd != _last_cmd:
-                print(f"[API] command: {_last_cmd} → {cmd}", flush=True)
+                state = "受付中" if armed else "待機中(g で受付開始)"
+                print(f"[API] command: {_last_cmd} → {cmd}  [{state}]", flush=True)
                 _last_cmd = cmd
 
             # 30秒ごとに生存確認ログ
             if _ok_count % 30 == 0:
-                print(f"[API] polling alive  cmd={cmd}  ok={_ok_count}", flush=True)
+                state = "受付中" if armed else "待機中"
+                print(f"[API] polling alive  cmd={cmd}  armed={armed}  ok={_ok_count}  [{state}]", flush=True)
 
-            if cmd == "RUN":
+            # armed のときだけ UI コマンドを反映
+            if not armed:
+                pass
+            elif cmd == "RUN":
                 ap.set_mode("RUN")
             elif cmd == "PAUSE":
                 ap.set_mode("PAUSE")
@@ -546,12 +555,22 @@ class AutoPilot:
         self.d_front = None
         self.mode = "PAUSE"
         self.running = True
+        self.armed = False  # True になると UI コマンドを受け付ける
         self.lock = threading.Lock()
 
         self.dbg = DebugLog(DBG_ENABLE, DBG_HZ, DBG_LEVEL, DBG_RING_N, one_line=True)
         self.fail = {"no_scan": 0}
 
         self._last_target_deg = 0.0
+
+    def set_armed(self, armed: bool):
+        with self.lock:
+            prev = self.armed
+            self.armed = armed
+        if armed and not prev:
+            self.dbg.event("armed=True  UI受付開始 — Vercel で START を押すと走行")
+        elif not armed and prev:
+            self.dbg.event("armed=False")
 
     def set_mode(self, mode):
         with self.lock:
@@ -857,12 +876,12 @@ def keyboard_loop(ap: AutoPilot):
             key = sys.stdin.read(1).lower()
 
             if key == 'g':
-                ap.set_mode("RUN")
-                print("\n[AUTO] RUN", flush=True)
+                ap.set_armed(True)
+                print("\n[AUTO] 受付開始 — Vercel UI の START で走行開始", flush=True)
 
             elif key == 's' or key == ' ':
                 ap.set_mode("PAUSE")
-                print("\n[AUTO] PAUSE/STOP", flush=True)
+                print("\n[AUTO] 緊急停止", flush=True)
 
             elif key == 'q':
                 ap.request_quit()
