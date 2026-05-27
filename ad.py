@@ -142,8 +142,8 @@ def test_api_connection(url: str) -> bool:
     return all_ok
 
 
-def fetch_and_apply_params(url: str) -> None:
-    """Vercel API からパラメータを取得してグローバル変数に反映する。"""
+def _apply_params_from_dict(d: dict) -> list:
+    """dict からグローバル変数へ反映し、変更されたキーのリストを返す。"""
     global FORWARD_DEG, LIDAR_DX, LIDAR_DY
     global FGM_ENABLE, FGM_FOV_DEG, FGM_BIN_DEG, FGM_SMOOTH_WIN
     global FGM_CLEAR_TH, FGM_MIN_GAP_DEG, FGM_TARGET
@@ -154,88 +154,98 @@ def fetch_and_apply_params(url: str) -> None:
     global PIVOT_ENABLE, PIVOT_STEER_TH, PIVOT_SOFT_TH, PIVOT_MIN_SPEED
     global EMA_ALPHA, FRONT_WINDOW_DEG, MOTOR_FREQ, SPEED_CMD_SCALE
 
+    def flt(k, cur): return float(d[k]) if k in d else cur
+    def bln(k, cur): return bool(d[k]) if k in d else cur
+    def s(k, cur):   return str(d[k])   if k in d else cur
+
+    before = (FGM_CLEAR_TH, FGM_FOV_DEG, FGM_BUBBLE_RADIUS, KP_GAP_ANGLE,
+              BASE_SPEED, SPEED_MAX, TURN_SPEED, MAX_STEER, PIVOT_ENABLE,
+              FORWARD_DEG, MOTOR_FREQ)
+
+    FORWARD_DEG        = flt("FORWARD_DEG",        FORWARD_DEG)
+    LIDAR_DX           = flt("LIDAR_DX",            LIDAR_DX)
+    LIDAR_DY           = flt("LIDAR_DY",            LIDAR_DY)
+    FGM_ENABLE         = bln("FGM_ENABLE",          FGM_ENABLE)
+    FGM_FOV_DEG        = flt("FGM_FOV_DEG",         FGM_FOV_DEG)
+    FGM_BIN_DEG        = flt("FGM_BIN_DEG",         FGM_BIN_DEG)
+    FGM_SMOOTH_WIN     = int(flt("FGM_SMOOTH_WIN",  FGM_SMOOTH_WIN))
+    FGM_CLEAR_TH       = flt("FGM_CLEAR_TH",        FGM_CLEAR_TH)
+    FGM_MIN_GAP_DEG    = flt("FGM_MIN_GAP_DEG",     FGM_MIN_GAP_DEG)
+    FGM_TARGET         = s(  "FGM_TARGET",           FGM_TARGET)
+    FGM_BUBBLE_RADIUS  = flt("FGM_BUBBLE_RADIUS",    FGM_BUBBLE_RADIUS)
+    FGM_BUBBLE_MIN_DEG = flt("FGM_BUBBLE_MIN_DEG",   FGM_BUBBLE_MIN_DEG)
+    FGM_BUBBLE_MAX_DEG = flt("FGM_BUBBLE_MAX_DEG",   FGM_BUBBLE_MAX_DEG)
+    KP_GAP_ANGLE       = flt("KP_GAP_ANGLE",         KP_GAP_ANGLE)
+    MAX_STEER          = flt("MAX_STEER",             MAX_STEER)
+    BASE_SPEED         = flt("BASE_SPEED",            BASE_SPEED)
+    SPEED_MIN          = flt("SPEED_MIN",             SPEED_MIN)
+    SPEED_MAX          = flt("SPEED_MAX",             SPEED_MAX)
+    TURN_SPEED         = flt("TURN_SPEED",            TURN_SPEED)
+    SPEED_STEER_DROP   = flt("SPEED_STEER_DROP",      SPEED_STEER_DROP)
+    SPEED_FRONT_DROP   = flt("SPEED_FRONT_DROP",      SPEED_FRONT_DROP)
+    FRONT_SLOW         = flt("FRONT_SLOW",            FRONT_SLOW)
+    FRONT_STOP         = flt("FRONT_STOP",            FRONT_STOP)
+    PIVOT_ENABLE       = bln("PIVOT_ENABLE",          PIVOT_ENABLE)
+    PIVOT_STEER_TH     = flt("PIVOT_STEER_TH",        PIVOT_STEER_TH)
+    PIVOT_SOFT_TH      = flt("PIVOT_SOFT_TH",         PIVOT_SOFT_TH)
+    PIVOT_MIN_SPEED    = flt("PIVOT_MIN_SPEED",        PIVOT_MIN_SPEED)
+    EMA_ALPHA          = flt("EMA_ALPHA",              EMA_ALPHA)
+    FRONT_WINDOW_DEG   = int(flt("FRONT_WINDOW_DEG",  FRONT_WINDOW_DEG))
+    MOTOR_FREQ         = int(flt("MOTOR_FREQ",         MOTOR_FREQ))
+    SPEED_CMD_SCALE    = flt("SPEED_CMD_SCALE",        SPEED_CMD_SCALE)
+
+    after = (FGM_CLEAR_TH, FGM_FOV_DEG, FGM_BUBBLE_RADIUS, KP_GAP_ANGLE,
+             BASE_SPEED, SPEED_MAX, TURN_SPEED, MAX_STEER, PIVOT_ENABLE,
+             FORWARD_DEG, MOTOR_FREQ)
+    return before != after  # True = 変更あり
+
+
+def _print_applied_params(label: str = "適用パラメータ") -> None:
+    print(f"[PARAM] ===== {label} =====", flush=True)
+    print(f"[PARAM]  FTGコア   FOV={FGM_FOV_DEG}°  CLEAR_TH={FGM_CLEAR_TH}m  "
+          f"MIN_GAP={FGM_MIN_GAP_DEG}°  TARGET={FGM_TARGET}  ENABLE={FGM_ENABLE}", flush=True)
+    print(f"[PARAM]  Bubble    RADIUS={FGM_BUBBLE_RADIUS}m  "
+          f"MIN={FGM_BUBBLE_MIN_DEG}°  MAX={FGM_BUBBLE_MAX_DEG}°", flush=True)
+    print(f"[PARAM]  速度      BASE={BASE_SPEED}  MAX={SPEED_MAX}  TURN={TURN_SPEED}  "
+          f"STEER_DROP={SPEED_STEER_DROP}  FRONT_DROP={SPEED_FRONT_DROP}", flush=True)
+    print(f"[PARAM]  減速距離  SLOW={FRONT_SLOW}m  STOP={FRONT_STOP}m", flush=True)
+    print(f"[PARAM]  操舵      KP={KP_GAP_ANGLE}  MAX_STEER={MAX_STEER}", flush=True)
+    print(f"[PARAM]  Pivot     ENABLE={PIVOT_ENABLE}  TH={PIVOT_STEER_TH}  "
+          f"SOFT={PIVOT_SOFT_TH}  MIN_SPEED={PIVOT_MIN_SPEED}", flush=True)
+    print(f"[PARAM]  HW        FORWARD={FORWARD_DEG}°  LIDAR_DX={LIDAR_DX}m  "
+          f"MOTOR_FREQ={MOTOR_FREQ}Hz  SCALE={SPEED_CMD_SCALE}", flush=True)
+    print("[PARAM] " + "=" * (len(label) + 12), flush=True)
+
+
+def fetch_and_apply_params(url: str) -> None:
+    """起動時: Vercel API からパラメータを取得して反映する。"""
     endpoint = f"{url}/api/params"
     print(f"[API] GET {endpoint}", flush=True)
     try:
-        req = urllib.request.Request(
-            endpoint,
-            headers={"User-Agent": "raspi-ftg/1.0"},
-        )
+        req = urllib.request.Request(endpoint, headers={"User-Agent": "raspi-ftg/1.0"})
         with urllib.request.urlopen(req, timeout=5) as r:
             status = r.status
             d = json.loads(r.read())
-        print(f"[API] params response: HTTP {status}, {len(d)} keys", flush=True)
+        print(f"[API] params HTTP {status}, {len(d)} keys", flush=True)
     except Exception as e:
         print(f"[API] fetch_params FAILED: {type(e).__name__}: {e}", flush=True)
         return
 
-    def flt(k, default):
-        return float(d[k]) if k in d else default
-
-    def bln(k, default):
-        return bool(d[k]) if k in d else default
-
-    def s(k, default):
-        return str(d[k]) if k in d else default
-
-    FORWARD_DEG       = flt("FORWARD_DEG",       FORWARD_DEG)
-    LIDAR_DX          = flt("LIDAR_DX",           LIDAR_DX)
-    LIDAR_DY          = flt("LIDAR_DY",           LIDAR_DY)
-    FGM_ENABLE        = bln("FGM_ENABLE",         FGM_ENABLE)
-    FGM_FOV_DEG       = flt("FGM_FOV_DEG",        FGM_FOV_DEG)
-    FGM_BIN_DEG       = flt("FGM_BIN_DEG",        FGM_BIN_DEG)
-    FGM_SMOOTH_WIN    = int(flt("FGM_SMOOTH_WIN", FGM_SMOOTH_WIN))
-    FGM_CLEAR_TH      = flt("FGM_CLEAR_TH",       FGM_CLEAR_TH)
-    FGM_MIN_GAP_DEG   = flt("FGM_MIN_GAP_DEG",    FGM_MIN_GAP_DEG)
-    FGM_TARGET        = s(  "FGM_TARGET",          FGM_TARGET)
-    FGM_BUBBLE_RADIUS = flt("FGM_BUBBLE_RADIUS",   FGM_BUBBLE_RADIUS)
-    FGM_BUBBLE_MIN_DEG = flt("FGM_BUBBLE_MIN_DEG", FGM_BUBBLE_MIN_DEG)
-    FGM_BUBBLE_MAX_DEG = flt("FGM_BUBBLE_MAX_DEG", FGM_BUBBLE_MAX_DEG)
-    KP_GAP_ANGLE      = flt("KP_GAP_ANGLE",        KP_GAP_ANGLE)
-    MAX_STEER         = flt("MAX_STEER",            MAX_STEER)
-    BASE_SPEED        = flt("BASE_SPEED",           BASE_SPEED)
-    SPEED_MIN         = flt("SPEED_MIN",            SPEED_MIN)
-    SPEED_MAX         = flt("SPEED_MAX",            SPEED_MAX)
-    TURN_SPEED        = flt("TURN_SPEED",           TURN_SPEED)
-    SPEED_STEER_DROP  = flt("SPEED_STEER_DROP",     SPEED_STEER_DROP)
-    SPEED_FRONT_DROP  = flt("SPEED_FRONT_DROP",     SPEED_FRONT_DROP)
-    FRONT_SLOW        = flt("FRONT_SLOW",           FRONT_SLOW)
-    FRONT_STOP        = flt("FRONT_STOP",           FRONT_STOP)
-    PIVOT_ENABLE      = bln("PIVOT_ENABLE",         PIVOT_ENABLE)
-    PIVOT_STEER_TH    = flt("PIVOT_STEER_TH",       PIVOT_STEER_TH)
-    PIVOT_SOFT_TH     = flt("PIVOT_SOFT_TH",        PIVOT_SOFT_TH)
-    PIVOT_MIN_SPEED   = flt("PIVOT_MIN_SPEED",      PIVOT_MIN_SPEED)
-    EMA_ALPHA         = flt("EMA_ALPHA",            EMA_ALPHA)
-    FRONT_WINDOW_DEG  = int(flt("FRONT_WINDOW_DEG", FRONT_WINDOW_DEG))
-    MOTOR_FREQ        = int(flt("MOTOR_FREQ",       MOTOR_FREQ))
-    SPEED_CMD_SCALE   = flt("SPEED_CMD_SCALE",      SPEED_CMD_SCALE)
-
-    # 適用後の全パラメータをグループ別に表示
-    print("[PARAM] ========== 適用パラメータ（起動時のみ反映）==========", flush=True)
-    print(f"[PARAM]  FTGコア      FOV={FGM_FOV_DEG}° "
-          f"CLEAR_TH={FGM_CLEAR_TH}m  MIN_GAP={FGM_MIN_GAP_DEG}°  "
-          f"TARGET={FGM_TARGET}  ENABLE={FGM_ENABLE}", flush=True)
-    print(f"[PARAM]  Bubble       RADIUS={FGM_BUBBLE_RADIUS}m  "
-          f"MIN={FGM_BUBBLE_MIN_DEG}°  MAX={FGM_BUBBLE_MAX_DEG}°", flush=True)
-    print(f"[PARAM]  速度         BASE={BASE_SPEED}  MAX={SPEED_MAX}  "
-          f"TURN={TURN_SPEED}  STEER_DROP={SPEED_STEER_DROP}  FRONT_DROP={SPEED_FRONT_DROP}", flush=True)
-    print(f"[PARAM]  減速距離     SLOW={FRONT_SLOW}m  STOP={FRONT_STOP}m", flush=True)
-    print(f"[PARAM]  操舵         KP={KP_GAP_ANGLE}  MAX_STEER={MAX_STEER}", flush=True)
-    print(f"[PARAM]  Pivot        ENABLE={PIVOT_ENABLE}  TH={PIVOT_STEER_TH}  "
-          f"SOFT={PIVOT_SOFT_TH}  MIN_SPEED={PIVOT_MIN_SPEED}", flush=True)
-    print(f"[PARAM]  HW           FORWARD={FORWARD_DEG}°  "
-          f"LIDAR_DX={LIDAR_DX}m  MOTOR_FREQ={MOTOR_FREQ}Hz  SCALE={SPEED_CMD_SCALE}", flush=True)
-    print("[PARAM] ========================================================", flush=True)
+    _apply_params_from_dict(d)
+    _print_applied_params("起動時パラメータ（STOP中は UI から更新可能）")
 
 
 def poll_command(ap, url: str) -> None:
-    """Vercel API のコマンドを 1 秒ごとに監視して AutoPilot に反映する。"""
-    endpoint = f"{url}/api/command"
-    print(f"[API] poll_command started  endpoint={endpoint}", flush=True)
+    """コマンドを 1 秒ごと、PAUSE 中はパラメータも 3 秒ごとに取得して反映する。"""
+    cmd_endpoint   = f"{url}/api/command"
+    param_endpoint = f"{url}/api/params"
+    print(f"[API] poll_command started  cmd={cmd_endpoint}", flush=True)
 
-    _last_cmd = None   # 前回コマンド（変化時だけ表示）
-    _ok_count  = 0
-    _err_count = 0
+    _last_cmd        = None
+    _last_params_raw = b""   # 前回取得したパラメータ JSON (変化検出用)
+    _ok_count        = 0
+    _err_count       = 0
+    _tick            = 0     # 経過秒カウンタ
 
     while True:
         with ap.lock:
@@ -243,34 +253,34 @@ def poll_command(ap, url: str) -> None:
                 print("[API] poll_command: ap.running=False → 終了", flush=True)
                 break
 
+        _tick += 1
+
+        # ---- コマンド取得（毎秒）----
         try:
             req = urllib.request.Request(
-                endpoint,
-                headers={"User-Agent": "raspi-ftg/1.0"},
+                cmd_endpoint, headers={"User-Agent": "raspi-ftg/1.0"}
             )
             with urllib.request.urlopen(req, timeout=3) as r:
                 d = json.loads(r.read())
 
             cmd = d.get("command", "PAUSE")
             _ok_count += 1
-            _err_count = 0  # 成功でリセット
+            _err_count = 0
 
-            # armed 状態を読む
             with ap.lock:
                 armed = ap.armed
+                mode  = ap.mode
 
-            # コマンドが変わったときだけ表示（armed 状態も付記）
             if cmd != _last_cmd:
                 state = "受付中" if armed else "待機中(g で受付開始)"
                 print(f"[API] command: {_last_cmd} → {cmd}  [{state}]", flush=True)
                 _last_cmd = cmd
 
-            # 10秒ごとに生存確認ログ
             if _ok_count % 10 == 0:
                 state = "受付中" if armed else "待機中(g キーで受付開始)"
-                print(f"[API] polling ok  cmd={cmd}  armed={armed}  [{state}]", flush=True)
+                print(f"[API] alive  cmd={cmd}  mode={mode}  armed={armed}  [{state}]",
+                      flush=True)
 
-            # armed のときだけ UI コマンドを反映
             if not armed:
                 pass
             elif cmd == "RUN":
@@ -284,13 +294,36 @@ def poll_command(ap, url: str) -> None:
 
         except urllib.error.URLError as e:
             _err_count += 1
-            # 最初の失敗と、5回おきに表示（スパム防止）
             if _err_count == 1 or _err_count % 5 == 0:
                 print(f"[API] poll URLError ({_err_count}回連続): {e.reason}", flush=True)
         except Exception as e:
             _err_count += 1
             if _err_count == 1 or _err_count % 5 == 0:
-                print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}", flush=True)
+                print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}",
+                      flush=True)
+
+        # ---- PAUSE 中のみ: パラメータを 3 秒ごとに取得して変化があれば反映 ----
+        with ap.lock:
+            is_paused = (ap.mode == "PAUSE")
+
+        if is_paused and _tick % 3 == 0:
+            try:
+                req = urllib.request.Request(
+                    param_endpoint, headers={"User-Agent": "raspi-ftg/1.0"}
+                )
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    body = r.read()
+
+                if body != _last_params_raw:
+                    _last_params_raw = body
+                    changed = _apply_params_from_dict(json.loads(body))
+                    if changed:
+                        _print_applied_params("PAUSE中に更新されたパラメータ")
+                    else:
+                        print("[PARAM] PAUSE中チェック: 変更なし", flush=True)
+
+            except Exception as e:
+                print(f"[PARAM] PAUSE中の取得エラー: {type(e).__name__}: {e}", flush=True)
 
         time.sleep(1.0)
 
