@@ -124,15 +124,19 @@ def fetch_and_apply_params(url: str) -> None:
     global PIVOT_ENABLE, PIVOT_STEER_TH, PIVOT_SOFT_TH, PIVOT_MIN_SPEED
     global EMA_ALPHA, FRONT_WINDOW_DEG, MOTOR_FREQ, SPEED_CMD_SCALE
 
+    endpoint = f"{url}/api/params"
+    print(f"[API] GET {endpoint}", flush=True)
     try:
         req = urllib.request.Request(
-            f"{url}/api/params",
+            endpoint,
             headers={"User-Agent": "raspi-ftg/1.0"},
         )
         with urllib.request.urlopen(req, timeout=5) as r:
+            status = r.status
             d = json.loads(r.read())
+        print(f"[API] params response: HTTP {status}, {len(d)} keys", flush=True)
     except Exception as e:
-        print(f"[PARAM] fetch failed: {e}", flush=True)
+        print(f"[API] fetch_params FAILED: {type(e).__name__}: {e}", flush=True)
         return
 
     def flt(k, default):
@@ -176,32 +180,68 @@ def fetch_and_apply_params(url: str) -> None:
     MOTOR_FREQ        = int(flt("MOTOR_FREQ",       MOTOR_FREQ))
     SPEED_CMD_SCALE   = flt("SPEED_CMD_SCALE",      SPEED_CMD_SCALE)
 
-    print(f"[PARAM] applied from {url}", flush=True)
+    # 適用後の重要パラメータを表示
+    print("[API] params applied:", flush=True)
+    for k in ("FGM_CLEAR_TH", "FGM_FOV_DEG", "FGM_BUBBLE_RADIUS",
+              "KP_GAP_ANGLE", "BASE_SPEED", "SPEED_MAX", "PIVOT_ENABLE"):
+        print(f"[API]   {k} = {d.get(k, '(default)')}", flush=True)
 
 
 def poll_command(ap, url: str) -> None:
     """Vercel API のコマンドを 1 秒ごとに監視して AutoPilot に反映する。"""
+    endpoint = f"{url}/api/command"
+    print(f"[API] poll_command started  endpoint={endpoint}", flush=True)
+
+    _last_cmd = None   # 前回コマンド（変化時だけ表示）
+    _ok_count  = 0
+    _err_count = 0
+
     while True:
         with ap.lock:
             if not ap.running:
+                print("[API] poll_command: ap.running=False → 終了", flush=True)
                 break
+
         try:
             req = urllib.request.Request(
-                f"{url}/api/command",
+                endpoint,
                 headers={"User-Agent": "raspi-ftg/1.0"},
             )
             with urllib.request.urlopen(req, timeout=3) as r:
                 d = json.loads(r.read())
+
             cmd = d.get("command", "PAUSE")
+            _ok_count += 1
+            _err_count = 0  # 成功でリセット
+
+            # コマンドが変わったときだけ表示
+            if cmd != _last_cmd:
+                print(f"[API] command: {_last_cmd} → {cmd}", flush=True)
+                _last_cmd = cmd
+
+            # 30秒ごとに生存確認ログ
+            if _ok_count % 30 == 0:
+                print(f"[API] polling alive  cmd={cmd}  ok={_ok_count}", flush=True)
+
             if cmd == "RUN":
                 ap.set_mode("RUN")
             elif cmd == "PAUSE":
                 ap.set_mode("PAUSE")
             elif cmd == "QUIT":
+                print("[API] QUIT コマンド受信 → 終了", flush=True)
                 ap.request_quit()
                 break
-        except Exception:
-            pass
+
+        except urllib.error.URLError as e:
+            _err_count += 1
+            # 最初の失敗と、5回おきに表示（スパム防止）
+            if _err_count == 1 or _err_count % 5 == 0:
+                print(f"[API] poll URLError ({_err_count}回連続): {e.reason}", flush=True)
+        except Exception as e:
+            _err_count += 1
+            if _err_count == 1 or _err_count % 5 == 0:
+                print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}", flush=True)
+
         time.sleep(1.0)
 
 
@@ -848,21 +888,24 @@ def keyboard_loop(ap: AutoPilot):
 # 6) main
 # ==========================================
 def main():
-    # Vercel API からパラメータを取得（PARAM_SERVER_URL が設定されている場合）
+    # ---- Vercel API 接続 ----
     _server_url = os.environ.get("PARAM_SERVER_URL", "").rstrip("/")
-    if _server_url:
-        print(f"[PARAM] fetching from {_server_url} ...", flush=True)
-        fetch_and_apply_params(_server_url)
 
     print("=== 自動運転 (LiDAR + PWM) : Follow the Gap ===")
-    print(f"FORWARD_DEG   = {FORWARD_DEG} （前方角を必ず合わせる）")
+    if _server_url:
+        print(f"[API] PARAM_SERVER_URL = {_server_url}")
+        fetch_and_apply_params(_server_url)
+    else:
+        print("[API] PARAM_SERVER_URL 未設定 → ローカルパラメータを使用")
+        print("      (設定例: export PARAM_SERVER_URL=https://param4ad.vercel.app)")
+
+    print(f"FORWARD_DEG   = {FORWARD_DEG}")
     print(f"FGM_FOV_DEG   = {FGM_FOV_DEG}")
     print(f"FGM_CLEAR_TH  = {FGM_CLEAR_TH}")
     print(f"BUBBLE_RADIUS = {FGM_BUBBLE_RADIUS}")
     print(f"BASE_SPEED    = {BASE_SPEED}")
     if _server_url:
-        print(f"PARAM_SERVER  = {_server_url}")
-        print("コマンド (RUN/PAUSE) は Vercel UI または g/s キーで操作")
+        print("コマンド: Vercel UI の START/STOP、または g/s キー")
     else:
         print("g: 開始  s/Space: 停止  q: 終了  d:debug  1/2/3:level  p:dump")
     print("================================================")
@@ -882,6 +925,7 @@ def main():
                 target=poll_command, args=(ap, _server_url), daemon=True
             )
             cmd_th.start()
+            print(f"[API] poll_command スレッド開始 (1秒ごとに {_server_url}/api/command をチェック)", flush=True)
 
         ap.set_mode("PAUSE")
         keyboard_loop(ap)
