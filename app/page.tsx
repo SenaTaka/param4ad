@@ -270,7 +270,10 @@ export default function Home() {
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-white">FTG Param Controller</h1>
-          <Link href="/explain" className="text-xs text-blue-400 hover:text-blue-300 underline">アルゴリズム解説 →</Link>
+          <div className="flex gap-3">
+            <Link href="/explain" className="text-xs text-blue-400 hover:text-blue-300 underline">アルゴ解説 →</Link>
+            <Link href="/sim" className="text-xs text-green-400 hover:text-green-300 underline">シミュレータ →</Link>
+          </div>
         </div>
         <p className="text-sm text-gray-500 mt-0.5">LiDAR Follow-the-Gap — Raspberry Pi</p>
       </div>
