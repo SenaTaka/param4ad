@@ -49,7 +49,7 @@ export interface FTGResult {
 }
 
 export const DEFAULT_SIM_PARAMS: SimParams = {
-  fovDeg: 90,
+  fovDeg: 120,
   binDeg: 2,
   smoothWin: 9,
   clearTh: 1.4,
@@ -310,6 +310,6 @@ export function stepRobot(robot: RobotState, ls: number, rs: number, dt: number)
   return {
     x: robot.x + v * Math.cos(robot.heading) * dt,
     y: robot.y + v * Math.sin(robot.heading) * dt,
-    heading: robot.heading + omega * dt,
+    heading: robot.heading - omega * dt,  // y-down canvas: CCW = heading decreases
   }
 }
