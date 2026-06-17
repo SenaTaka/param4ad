@@ -108,7 +108,7 @@ function Slider({ field, value, onChange }: {
   onChange: (v: number) => void
 }) {
   return (
-    <div className="py-3 border-b border-gray-800 last:border-0">
+    <div className="py-3 border-b border-[#1a3048] last:border-0">
       <div className="flex justify-between items-center mb-2">
         <div className="flex-1 min-w-0 pr-3">
           <span className="text-sm font-medium text-gray-200">{field.label}</span>
@@ -127,7 +127,7 @@ function Slider({ field, value, onChange }: {
               const v = parseFloat(e.target.value)
               if (!isNaN(v)) onChange(v)
             }}
-            className="w-20 text-right bg-gray-800 text-white border border-gray-700 rounded px-2 py-0.5 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-20 text-right bg-[#0b1828] text-white border border-[#1a3048] rounded px-2 py-0.5 text-sm font-mono focus:border-cyan-400 focus:outline-none"
           />
           {field.unit && (
             <span className="text-xs text-gray-500 w-6 shrink-0">{field.unit}</span>
@@ -160,7 +160,7 @@ function Toggle({ field, value, onChange }: {
       </div>
       <button
         onClick={() => onChange(!value)}
-        className={`relative w-12 h-6 rounded-full transition-colors ${value ? "bg-blue-600" : "bg-gray-700"}`}
+        className={`relative w-12 h-6 rounded-full transition-colors ${value ? "bg-cyan-600" : "bg-[#1a3048]"}`}
       >
         <span
           className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? "translate-x-6" : "translate-x-0"}`}
@@ -186,7 +186,7 @@ function SelectInput({ field, value, onChange }: {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="bg-gray-800 text-white border border-gray-700 rounded px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+        className="bg-[#0b1828] text-white border border-[#1a3048] rounded px-2 py-1 text-sm focus:border-cyan-400 focus:outline-none"
       >
         {field.options.map(opt => (
           <option key={opt} value={opt}>{opt}</option>
@@ -269,22 +269,29 @@ export default function Home() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">FTG Param Controller</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            <span className="text-cyan-400 font-mono mr-1.5 select-none">&gt;</span>FTG Param Controller
+          </h1>
           <div className="flex gap-3">
-            <Link href="/explain" className="text-xs text-blue-400 hover:text-blue-300 underline">アルゴ解説 →</Link>
-            <Link href="/sim" className="text-xs text-green-400 hover:text-green-300 underline">シミュレータ →</Link>
+            <Link href="/explain" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">アルゴ解説 →</Link>
+            <Link href="/sim" className="text-xs text-green-400 hover:text-green-300 transition-colors">シミュレータ →</Link>
           </div>
         </div>
-        <p className="text-sm text-gray-500 mt-0.5">LiDAR Follow-the-Gap — Raspberry Pi</p>
+        <p className="text-xs text-gray-500 mt-0.5 font-mono">LiDAR Follow-the-Gap — Raspberry Pi</p>
       </div>
 
       {/* Command */}
-      <section className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">コマンド</h2>
+      <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 font-mono">コマンド</h2>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${command === "RUN" ? "bg-green-400" : "bg-yellow-400"}`} />
-            <span className={`text-sm font-bold ${command === "RUN" ? "text-green-400" : "text-yellow-400"}`}>
+            <span className="relative flex h-2.5 w-2.5">
+              {command === "RUN" && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+              )}
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${command === "RUN" ? "bg-green-400" : "bg-yellow-400"}`} />
+            </span>
+            <span className={`text-sm font-bold font-mono ${command === "RUN" ? "text-green-400" : "text-yellow-400"}`}>
               {command}
             </span>
           </div>
@@ -292,14 +299,14 @@ export default function Home() {
             <button
               onClick={() => handleCommand("RUN")}
               disabled={command === "RUN"}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               START
             </button>
             <button
               onClick={() => handleCommand("PAUSE")}
               disabled={command === "PAUSE"}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-yellow-700 hover:bg-yellow-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-yellow-700 hover:bg-yellow-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               STOP
             </button>
@@ -308,17 +315,17 @@ export default function Home() {
       </section>
 
       {/* Params */}
-      <section className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl overflow-hidden">
         {/* Tabs */}
-        <div className="flex overflow-x-auto border-b border-gray-800 scrollbar-hide">
+        <div className="flex overflow-x-auto border-b border-[#1a3048] scrollbar-hide">
           {GROUPS.map((g, i) => (
             <button
               key={g.title}
               onClick={() => setActiveTab(i)}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
                 activeTab === i
-                  ? "text-blue-400 border-b-2 border-blue-400 -mb-px"
-                  : "text-gray-400 hover:text-gray-200"
+                  ? "text-cyan-400 border-b-2 border-cyan-400 -mb-px"
+                  : "text-gray-500 hover:text-gray-200"
               }`}
             >
               {g.title}
@@ -364,10 +371,10 @@ export default function Home() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800 bg-gray-950/50">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-[#1a3048] bg-[#04090f]/50">
           <button
             onClick={handleReset}
-            className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors font-mono"
           >
             デフォルトに戻す
           </button>
@@ -379,7 +386,7 @@ export default function Home() {
                 ? "bg-green-700 text-white"
                 : saveStatus === "error"
                 ? "bg-red-700 text-white"
-                : "bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60"
+                : "bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-60"
             }`}
           >
             {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? "保存完了" : saveStatus === "error" ? "エラー" : "パラメータを保存"}
@@ -388,8 +395,8 @@ export default function Home() {
       </section>
 
       {/* API info */}
-      <p className="text-xs text-gray-600 text-center">
-        GET /api/params — ラズパイはこのエンドポイントで取得
+      <p className="text-xs text-[#1a3048] text-center font-mono select-none">
+        GET /api/params
       </p>
     </main>
   )

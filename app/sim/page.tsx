@@ -285,40 +285,42 @@ export default function SimPage() {
         </div>
         <input type="range" min={min} max={max} step={step} value={val}
           onChange={e => setParams(prev => ({ ...prev, [k]: parseFloat(e.target.value) }))}
-          className="w-full accent-blue-500" />
+          className="w-full accent-cyan-400" />
       </div>
     )
   }
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-4">
+    <main className="min-h-screen bg-[#04090f] text-white p-4">
       <div className="max-w-4xl mx-auto space-y-4">
         {/* header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-blue-400">FTG シミュレータ</h1>
-            <p className="text-xs text-gray-500">シケイン + Sカーブ コース — トップダウン2D</p>
+            <h1 className="text-xl font-bold text-cyan-400 tracking-tight">
+              <span className="font-mono mr-1 opacity-60">&gt;</span>FTG シミュレータ
+            </h1>
+            <p className="text-xs text-gray-500 font-mono">シケイン + Sカーブ コース — トップダウン2D</p>
           </div>
           <div className="flex gap-3 text-xs">
-            <Link href="/explain" className="text-blue-400 hover:underline">アルゴ解説</Link>
-            <Link href="/" className="text-gray-400 hover:underline">← 設定</Link>
+            <Link href="/explain" className="text-cyan-400 hover:text-cyan-300 transition-colors">アルゴ解説</Link>
+            <Link href="/" className="text-gray-400 hover:text-gray-200 transition-colors">← 設定</Link>
           </div>
         </div>
 
         {/* canvas */}
-        <div className="rounded-xl overflow-hidden border border-gray-800">
+        <div className="rounded-xl overflow-hidden border border-[#1a3048]">
           <canvas ref={canvasRef} width={CW} height={CH} className="w-full h-auto block" />
         </div>
 
         {/* controls */}
         <div className="flex flex-wrap gap-2 items-center">
           <button onClick={() => setRunning(r => !r)}
-            className={`px-5 py-2 rounded-lg font-bold text-sm ${running
+            className={`px-5 py-2 rounded-lg font-bold text-sm transition-colors ${running
               ? "bg-yellow-500 hover:bg-yellow-400 text-black"
               : "bg-green-500 hover:bg-green-400 text-black"}`}>
             {running ? "⏸ 停止" : "▶ スタート"}
           </button>
-          <button onClick={reset} className="px-4 py-2 rounded-lg text-sm bg-gray-700 hover:bg-gray-600">
+          <button onClick={reset} className="px-4 py-2 rounded-lg text-sm bg-[#1a3048] hover:bg-[#243f5e] transition-colors">
             ↺ リセット
           </button>
 
@@ -344,7 +346,7 @@ export default function SimPage() {
         </div>
 
         {/* sliders */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+        <div className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
           <Slider label="視野角 FOV (°)" k="fovDeg" min={60} max={180} step={5} />
           <Slider label="障害物閾値 CLEAR_TH (m)" k="clearTh" min={0.3} max={3} step={0.05} />
           <Slider label="バブル半径 (m)" k="bubbleRadius" min={0.05} max={0.6} step={0.01} />
