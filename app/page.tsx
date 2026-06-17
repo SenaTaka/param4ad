@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import Link from "next/link"
 import { DEFAULT_PARAMS, DEFAULT_COMMAND } from "@/lib/defaults"
 import type { Params, Command } from "@/lib/defaults"
 
@@ -272,10 +271,6 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-white tracking-tight">
             <span className="text-cyan-400 font-mono mr-1.5 select-none">&gt;</span>FTG Param Controller
           </h1>
-          <div className="flex gap-3">
-            <Link href="/explain" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">アルゴ解説 →</Link>
-            <Link href="/sim" className="text-xs text-green-400 hover:text-green-300 transition-colors">シミュレータ →</Link>
-          </div>
         </div>
         <p className="text-xs text-gray-500 mt-0.5 font-mono">LiDAR Follow-the-Gap — Raspberry Pi</p>
       </div>

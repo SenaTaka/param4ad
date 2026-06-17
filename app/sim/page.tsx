@@ -1,7 +1,6 @@
 "use client"
 
 import { useRef, useState, useEffect, useCallback } from "react"
-import Link from "next/link"
 import {
   ftgControl, stepRobot,
   DEFAULT_SIM_PARAMS,
@@ -294,17 +293,11 @@ export default function SimPage() {
     <main className="min-h-screen bg-[#04090f] text-white p-4">
       <div className="max-w-4xl mx-auto space-y-4">
         {/* header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-cyan-400 tracking-tight">
-              <span className="font-mono mr-1 opacity-60">&gt;</span>FTG シミュレータ
-            </h1>
-            <p className="text-xs text-gray-500 font-mono">シケイン + Sカーブ コース — トップダウン2D</p>
-          </div>
-          <div className="flex gap-3 text-xs">
-            <Link href="/explain" className="text-cyan-400 hover:text-cyan-300 transition-colors">アルゴ解説</Link>
-            <Link href="/" className="text-gray-400 hover:text-gray-200 transition-colors">← 設定</Link>
-          </div>
+        <div>
+          <h1 className="text-xl font-bold text-cyan-400 tracking-tight">
+            <span className="font-mono mr-1 opacity-60">&gt;</span>FTG シミュレータ
+          </h1>
+          <p className="text-xs text-gray-500 font-mono">シケイン + Sカーブ コース — トップダウン2D</p>
         </div>
 
         {/* canvas */}

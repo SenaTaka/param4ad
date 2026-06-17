@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 export default function ExplainPage() {
   return (
@@ -6,9 +5,6 @@ export default function ExplainPage() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-4 text-cyan-400 hover:text-cyan-300 transition-colors text-sm font-mono">
-            ← もどる
-          </Link>
           <h1 className="text-3xl font-bold text-white mb-2">
             <span className="text-cyan-400 font-mono mr-2 text-2xl">&gt;</span>ロボットカーはどうやって走るの？
           </h1>
@@ -94,11 +90,6 @@ export default function ExplainPage() {
           </ol>
         </div>
 
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-8 rounded-full transition-colors">
-            パラメータ設定にもどる →
-          </Link>
-        </div>
       </div>
     </main>
   );
