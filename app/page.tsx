@@ -108,12 +108,12 @@ function Slider({ field, value, onChange }: {
   onChange: (v: number) => void
 }) {
   return (
-    <div className="py-3 border-b border-[#1a3048] last:border-0">
-      <div className="flex justify-between items-center mb-2">
-        <div className="flex-1 min-w-0 pr-3">
+    <div className="py-4 border-b border-[#1a3048] last:border-0">
+      <div className="flex justify-between items-start mb-1 gap-3">
+        <div className="flex-1 min-w-0">
           <span className="text-sm font-medium text-gray-200">{field.label}</span>
           {field.desc && (
-            <span className="text-xs text-gray-500 ml-2">{field.desc}</span>
+            <p className="text-xs text-gray-500 mt-0.5 leading-snug">{field.desc}</p>
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -127,7 +127,7 @@ function Slider({ field, value, onChange }: {
               const v = parseFloat(e.target.value)
               if (!isNaN(v)) onChange(v)
             }}
-            className="w-20 text-right bg-[#0b1828] text-white border border-[#1a3048] rounded px-2 py-0.5 text-sm font-mono focus:border-cyan-400 focus:outline-none"
+            className="w-20 text-right bg-[#0b1828] text-white border border-[#1a3048] rounded-lg px-2 py-2 text-sm font-mono focus:border-cyan-400 focus:outline-none min-h-[40px]"
           />
           {field.unit && (
             <span className="text-xs text-gray-500 w-6 shrink-0">{field.unit}</span>
@@ -153,17 +153,19 @@ function Toggle({ field, value, onChange }: {
   onChange: (v: boolean) => void
 }) {
   return (
-    <div className="py-3 border-b border-gray-800 last:border-0 flex items-center justify-between">
-      <div className="flex-1 min-w-0 pr-3">
+    <div className="py-4 border-b border-[#1a3048] last:border-0 flex items-start justify-between gap-3">
+      <div className="flex-1 min-w-0">
         <span className="text-sm font-medium text-gray-200">{field.label}</span>
-        {field.desc && <span className="text-xs text-gray-500 ml-2">{field.desc}</span>}
+        {field.desc && <p className="text-xs text-gray-500 mt-0.5 leading-snug">{field.desc}</p>}
       </div>
       <button
+        role="switch"
+        aria-checked={value}
         onClick={() => onChange(!value)}
-        className={`relative w-12 h-6 rounded-full transition-colors ${value ? "bg-cyan-600" : "bg-[#1a3048]"}`}
+        className={`relative shrink-0 w-14 h-8 rounded-full transition-colors duration-200 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1828] ${value ? "bg-cyan-600" : "bg-[#1a3048]"}`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? "translate-x-6" : "translate-x-0"}`}
+          className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${value ? "translate-x-6" : "translate-x-0"}`}
         />
       </button>
     </div>
@@ -176,17 +178,15 @@ function SelectInput({ field, value, onChange }: {
   onChange: (v: string) => void
 }) {
   return (
-    <div className="py-3 border-b border-gray-800 last:border-0 flex items-center justify-between">
-      <div>
+    <div className="py-4 border-b border-[#1a3048] last:border-0 flex items-start justify-between gap-3">
+      <div className="flex-1 min-w-0">
         <span className="text-sm font-medium text-gray-200">{field.label}</span>
-        {field.desc && (
-          <span className="text-xs text-gray-500 ml-2">{field.desc}</span>
-        )}
+        {field.desc && <p className="text-xs text-gray-500 mt-0.5 leading-snug">{field.desc}</p>}
       </div>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="bg-[#0b1828] text-white border border-[#1a3048] rounded px-2 py-1 text-sm focus:border-cyan-400 focus:outline-none"
+        className="bg-[#0b1828] text-white border border-[#1a3048] rounded-lg px-3 py-2 text-sm font-mono min-h-[40px] focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 shrink-0"
       >
         {field.options.map(opt => (
           <option key={opt} value={opt}>{opt}</option>
@@ -299,14 +299,14 @@ export default function Home() {
             <button
               onClick={() => handleCommand("RUN")}
               disabled={command === "RUN"}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="min-h-[44px] px-6 rounded-xl text-sm font-bold bg-green-700 hover:bg-green-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.97]"
             >
               START
             </button>
             <button
               onClick={() => handleCommand("PAUSE")}
               disabled={command === "PAUSE"}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-yellow-700 hover:bg-yellow-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="min-h-[44px] px-6 rounded-xl text-sm font-bold bg-yellow-700 hover:bg-yellow-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.97]"
             >
               STOP
             </button>
@@ -322,7 +322,7 @@ export default function Home() {
             <button
               key={g.title}
               onClick={() => setActiveTab(i)}
-              className={`px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`px-4 py-4 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] ${
                 activeTab === i
                   ? "text-cyan-400 border-b-2 border-cyan-400 -mb-px"
                   : "text-gray-500 hover:text-gray-200"
@@ -374,14 +374,14 @@ export default function Home() {
         <div className="flex items-center justify-between px-4 py-3 border-t border-[#1a3048] bg-[#04090f]/50">
           <button
             onClick={handleReset}
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors font-mono"
+            className="min-h-[44px] px-4 py-2 rounded-xl text-xs text-gray-500 hover:text-gray-200 hover:bg-[#1a3048] transition-all active:scale-[0.97] font-mono"
           >
             デフォルトに戻す
           </button>
           <button
             onClick={handleSave}
             disabled={saveStatus === "saving"}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            className={`min-h-[44px] px-6 rounded-xl text-sm font-bold transition-all active:scale-[0.97] ${
               saveStatus === "saved"
                 ? "bg-green-700 text-white"
                 : saveStatus === "error"
@@ -389,7 +389,7 @@ export default function Home() {
                 : "bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-60"
             }`}
           >
-            {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? "保存完了" : saveStatus === "error" ? "エラー" : "パラメータを保存"}
+            {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? "✓ 保存完了" : saveStatus === "error" ? "エラー" : "パラメータを保存"}
           </button>
         </div>
       </section>

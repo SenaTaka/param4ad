@@ -315,22 +315,22 @@ export default function SimPage() {
         {/* controls */}
         <div className="flex flex-wrap gap-2 items-center">
           <button onClick={() => setRunning(r => !r)}
-            className={`px-5 py-2 rounded-lg font-bold text-sm transition-colors ${running
+            className={`min-h-[44px] px-6 rounded-xl font-bold text-sm transition-all active:scale-[0.97] ${running
               ? "bg-yellow-500 hover:bg-yellow-400 text-black"
               : "bg-green-500 hover:bg-green-400 text-black"}`}>
             {running ? "⏸ 停止" : "▶ スタート"}
           </button>
-          <button onClick={reset} className="px-4 py-2 rounded-lg text-sm bg-[#1a3048] hover:bg-[#243f5e] transition-colors">
+          <button onClick={reset} className="min-h-[44px] px-5 rounded-xl text-sm bg-[#1a3048] hover:bg-[#243f5e] transition-all active:scale-[0.97]">
             ↺ リセット
           </button>
 
-          <div className="flex gap-3 ml-2">
+          <div className="flex gap-1 ml-2">
             {(["rays", "bubble", "gap"] as const).map(k => (
-              <label key={k} className="flex items-center gap-1 cursor-pointer select-none">
+              <label key={k} className="flex items-center gap-2 cursor-pointer select-none min-h-[44px] px-3 rounded-lg hover:bg-[#1a3048] transition-colors">
                 <input type="checkbox" checked={layers[k]}
                   onChange={e => setLayers(prev => ({ ...prev, [k]: e.target.checked }))}
-                  className="accent-blue-500" />
-                <span className="text-gray-300 text-xs">
+                  className="accent-cyan-400 w-4 h-4" />
+                <span className="text-gray-300 text-sm">
                   {k === "rays" ? "LiDAR" : k === "bubble" ? "バブル" : "ギャップ"}
                 </span>
               </label>
