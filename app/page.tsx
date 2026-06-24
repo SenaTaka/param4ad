@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { DEFAULT_PARAMS, DEFAULT_COMMAND } from "@/lib/defaults"
 import type { Params, Command, RaspiStatus } from "@/lib/defaults"
+import type { Robot } from "@/app/api/robots/route"
 
 // ---- Field config ----
 
@@ -313,6 +314,8 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const [raspiStatus, setRaspiStatus] = useState<RaspiStatus | null>(null)
+  const [robots, setRobots] = useState<Robot[]>([])
+  const [selectedRobotId, setSelectedRobotId] = useState("default")
   const [invertMotor, setInvertMotor] = useState(false)
   const [invertSteer, setInvertSteer] = useState(false)
 
@@ -333,37 +336,57 @@ export default function Home() {
     localStorage.setItem("invertSteer", String(v))
   }
 
-  // Load initial state
-  // 初回ロード
+  // ロボット一覧を5秒ごとに取得
   useEffect(() => {
-    fetch("/api/command")
+    const fetch_ = () => {
+      fetch("/api/robots")
+        .then(r => r.json())
+        .then((list: Robot[]) => {
+          setRobots(list)
+          // 選択中のロボットがリストにない場合は先頭へ
+          if (list.length > 0 && !list.find(r => r.id === selectedRobotId)) {
+            setSelectedRobotId(list[0].id)
+          }
+        })
+        .catch(() => {})
+    }
+    fetch_()
+    const id = setInterval(fetch_, 5000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ロボット切り替え時にコマンド・パラメータをリセット取得
+  useEffect(() => {
+    setRaspiStatus(null)
+    fetch(`/api/command?robot=${selectedRobotId}`)
       .then(r => r.json())
       .then(d => setCommand(d.command))
       .catch(() => {})
-  }, [])
+    fetch(`/api/params?robot=${selectedRobotId}`)
+      .then(r => r.json())
+      .then(setParams)
+      .catch(() => {})
+  }, [selectedRobotId])
 
   // パラメータを5秒ごとに自動同期（ユーザーが操作中は上書きしない）
   const [isDirty, setIsDirty] = useState(false)
   useEffect(() => {
     const sync = () => {
-      if (isDirty) return  // 未保存の変更があるときは上書きしない
-      fetch("/api/params")
+      if (isDirty) return
+      fetch(`/api/params?robot=${selectedRobotId}`)
         .then(r => r.json())
         .then(setParams)
         .catch(() => {})
     }
-    sync()
     const id = setInterval(sync, 5000)
     return () => clearInterval(id)
-  }, [isDirty])
-
-  // コマンドはユーザー操作のみで更新（サーバーポーリング廃止）
-  // → マルチインスタンス不整合でUIが逆転するのを防ぐ
+  }, [isDirty, selectedRobotId])
 
   // ラズパイステータスを2秒ごとに取得
   useEffect(() => {
     const poll = () => {
-      fetch("/api/status")
+      fetch(`/api/status?robot=${selectedRobotId}`)
         .then(r => r.json())
         .then((d: RaspiStatus | null) => setRaspiStatus(d))
         .catch(() => {})
@@ -371,7 +394,7 @@ export default function Home() {
     poll()
     const id = setInterval(poll, 2000)
     return () => clearInterval(id)
-  }, [])
+  }, [selectedRobotId])
 
   const updateParam = useCallback((key: keyof Params, value: number | boolean | string) => {
     setParams(prev => ({ ...prev, [key]: value }))
@@ -381,7 +404,7 @@ export default function Home() {
   const handleSave = async () => {
     setSaveStatus("saving")
     try {
-      const r = await fetch("/api/params", {
+      const r = await fetch(`/api/params?robot=${selectedRobotId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
@@ -401,7 +424,7 @@ export default function Home() {
 
   const handleCommand = async (cmd: Command) => {
     setCommand(cmd)
-    await fetch("/api/command", {
+    await fetch(`/api/command?robot=${selectedRobotId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command: cmd }),
@@ -424,8 +447,21 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-white tracking-tight">
             <span className="text-cyan-400 font-mono mr-1.5 select-none">&gt;</span>FTG Param Controller
           </h1>
+          {robots.length > 0 && (
+            <select
+              value={selectedRobotId}
+              onChange={e => setSelectedRobotId(e.target.value)}
+              className="bg-[#0b1828] text-cyan-300 border border-[#1a3048] rounded-lg px-3 py-2 text-sm font-mono min-h-[40px] focus:border-cyan-400 focus:outline-none"
+            >
+              {robots.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          )}
         </div>
-        <p className="text-xs text-gray-500 mt-0.5 font-mono">LiDAR Follow-the-Gap — Raspberry Pi</p>
+        <p className="text-xs text-gray-500 mt-0.5 font-mono">
+          LiDAR Follow-the-Gap — {robots.find(r => r.id === selectedRobotId)?.name ?? selectedRobotId}
+        </p>
       </div>
 
       {/* Command */}

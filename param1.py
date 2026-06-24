@@ -237,9 +237,24 @@ def _print_applied_params(label: str = "適用パラメータ", dbg=None) -> Non
             print(line, flush=True)
 
 
-def fetch_and_apply_params(url: str) -> None:
+def register_robot(url: str, robot_id: str, robot_name: str) -> None:
+    """起動時にサーバーへロボットを登録する。"""
+    try:
+        body = json.dumps({"id": robot_id, "name": robot_name}).encode()
+        req = urllib.request.Request(
+            f"{url}/api/robots", data=body,
+            headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+        print(f"[API] ロボット登録: id={robot_id} name={robot_name}", flush=True)
+    except Exception as e:
+        print(f"[API] ロボット登録失敗: {e}", flush=True)
+
+
+def fetch_and_apply_params(url: str, robot_id: str) -> None:
     """起動時: Vercel API からパラメータを取得して反映する。"""
-    endpoint = f"{url}/api/params"
+    endpoint = f"{url}/api/params?robot={robot_id}"
     print(f"[API] GET {endpoint}", flush=True)
     try:
         req = urllib.request.Request(endpoint, headers={"User-Agent": "raspi-ftg/1.0"})
@@ -279,11 +294,11 @@ def _post_status_async(ap, status_endpoint: str) -> None:
     threading.Thread(target=_do, daemon=True).start()
 
 
-def poll_command(ap, url: str) -> None:
-    """コマンドを 1 秒ごと、PAUSE 中はパラメータも 3 秒ごとに取得して反映する。"""
-    cmd_endpoint    = f"{url}/api/command"
-    param_endpoint  = f"{url}/api/params"
-    status_endpoint = f"{url}/api/status"
+def poll_command(ap, url: str, robot_id: str) -> None:
+    """コマンドを 0.3 秒ごと、PAUSE 中はパラメータも約 3 秒ごとに取得して反映する。"""
+    cmd_endpoint    = f"{url}/api/command?robot={robot_id}"
+    param_endpoint  = f"{url}/api/params?robot={robot_id}"
+    status_endpoint = f"{url}/api/status?robot={robot_id}"
     print(f"[API] poll_command started  cmd={cmd_endpoint}", flush=True)
 
     _last_cmd        = None
@@ -1060,12 +1075,15 @@ def keyboard_loop(ap: AutoPilot):
 def main():
     # ---- Vercel API 接続 ----
     _server_url = os.environ.get("PARAM_SERVER_URL", "").rstrip("/")
+    _robot_id   = os.environ.get("ROBOT_ID", "default")
+    _robot_name = os.environ.get("ROBOT_NAME", _robot_id)
 
-    print("=== 自動運転 (LiDAR + PWM) : Follow the Gap ===")
+    print(f"=== 自動運転 (LiDAR + PWM) : Follow the Gap  robot={_robot_id} ===")
     if _server_url:
         _api_ok = test_api_connection(_server_url)
         if _api_ok:
-            fetch_and_apply_params(_server_url)
+            register_robot(_server_url, _robot_id, _robot_name)
+            fetch_and_apply_params(_server_url, _robot_id)
         else:
             print("[API] 接続失敗のためローカルパラメータを使用", flush=True)
     else:
@@ -1095,7 +1113,7 @@ def main():
             # Vercel コマンドポーリングスレッド
             if _server_url:
                 cmd_th = threading.Thread(
-                    target=poll_command, args=(ap, _server_url), daemon=True
+                    target=poll_command, args=(ap, _server_url, _robot_id), daemon=True
                 )
                 cmd_th.start()
                 print(f"[API] poll_command スレッド開始 (1秒ごとに {_server_url}/api/command をチェック)", flush=True)
