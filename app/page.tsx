@@ -316,6 +316,8 @@ export default function Home() {
   const [raspiStatus, setRaspiStatus] = useState<RaspiStatus | null>(null)
   const [robots, setRobots] = useState<Robot[]>([])
   const [selectedRobotId, setSelectedRobotId] = useState("default")
+  const [addingRobot, setAddingRobot] = useState(false)
+  const [newRobotName, setNewRobotName] = useState("")
   const [invertMotor, setInvertMotor] = useState(false)
   const [invertSteer, setInvertSteer] = useState(false)
 
@@ -437,30 +439,88 @@ export default function Home() {
     }
   }
 
+  const handleAddRobot = async () => {
+    const name = newRobotName.trim()
+    if (!name) return
+    const id = name.toLowerCase().replace(/\s+/g, "_")
+    await fetch("/api/robots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name }),
+    }).catch(() => {})
+    setNewRobotName("")
+    setAddingRobot(false)
+    setSelectedRobotId(id)
+    // 一覧更新
+    const list = await fetch("/api/robots").then(r => r.json()).catch(() => robots)
+    setRobots(list)
+  }
+
+  const handleDeleteRobot = async (id: string) => {
+    if (!confirm(`「${robots.find(r => r.id === id)?.name ?? id}」を削除しますか？`)) return
+    await fetch(`/api/robots?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {})
+    const list = await fetch("/api/robots").then(r => r.json()).catch(() => robots)
+    setRobots(list)
+    if (selectedRobotId === id) {
+      setSelectedRobotId(list[0]?.id ?? "default")
+    }
+  }
+
   const group = GROUPS[activeTab]
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
       {/* Header */}
       <div>
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white tracking-tight">
-            <span className="text-cyan-400 font-mono mr-1.5 select-none">&gt;</span>FTG Param Controller
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-bold text-white tracking-tight shrink-0">
+            <span className="text-cyan-400 font-mono mr-1.5 select-none">&gt;</span>FTG
           </h1>
-          {robots.length > 0 && (
+          <div className="flex items-center gap-2 flex-1 justify-end">
+            {/* ロボット選択 */}
             <select
               value={selectedRobotId}
               onChange={e => setSelectedRobotId(e.target.value)}
-              className="bg-[#0b1828] text-cyan-300 border border-[#1a3048] rounded-lg px-3 py-2 text-sm font-mono min-h-[40px] focus:border-cyan-400 focus:outline-none"
+              className="bg-[#0b1828] text-cyan-300 border border-[#1a3048] rounded-lg px-3 py-2 text-sm font-mono min-h-[40px] focus:border-cyan-400 focus:outline-none max-w-[160px]"
             >
+              {robots.length === 0 && <option value="default">default</option>}
               {robots.map(r => (
                 <option key={r.id} value={r.id}>{r.name}</option>
               ))}
             </select>
-          )}
+            {/* 削除 */}
+            {robots.length > 0 && (
+              <button
+                onClick={() => handleDeleteRobot(selectedRobotId)}
+                className="text-gray-600 hover:text-red-400 text-lg min-h-[40px] px-1 transition-colors"
+                title="このロボットを削除"
+              >✕</button>
+            )}
+            {/* 追加 */}
+            {addingRobot ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={newRobotName}
+                  onChange={e => setNewRobotName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleAddRobot(); if (e.key === "Escape") setAddingRobot(false) }}
+                  placeholder="名前を入力"
+                  className="bg-[#0b1828] text-white border border-cyan-500 rounded-lg px-3 py-2 text-sm font-mono min-h-[40px] w-32 focus:outline-none"
+                />
+                <button onClick={handleAddRobot} className="text-cyan-400 font-bold px-2 min-h-[40px]">追加</button>
+                <button onClick={() => setAddingRobot(false)} className="text-gray-500 px-1 min-h-[40px]">✕</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingRobot(true)}
+                className="text-gray-500 hover:text-cyan-400 text-xl min-h-[40px] px-1 transition-colors"
+                title="ロボットを追加"
+              >＋</button>
+            )}
+          </div>
         </div>
         <p className="text-xs text-gray-500 mt-0.5 font-mono">
-          LiDAR Follow-the-Gap — {robots.find(r => r.id === selectedRobotId)?.name ?? selectedRobotId}
+          {robots.find(r => r.id === selectedRobotId)?.name ?? selectedRobotId}
         </p>
       </div>
 
