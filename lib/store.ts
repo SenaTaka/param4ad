@@ -1,30 +1,35 @@
+import { Redis } from "@upstash/redis"
+
 const memStore = new Map<string, unknown>()
 
-function hasKv() {
-  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+function getRedis(): Redis | null {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return Redis.fromEnv()
+  }
+  return null
 }
 
 export async function storeGet<T>(key: string, fallback: T): Promise<T> {
-  if (hasKv()) {
+  const redis = getRedis()
+  if (redis) {
     try {
-      const { kv } = await import("@vercel/kv")
-      const val = await kv.get<T>(key)
+      const val = await redis.get<T>(key)
       return val ?? fallback
     } catch {
-      // fall through
+      // fall through to memStore
     }
   }
   return (memStore.get(key) as T) ?? fallback
 }
 
 export async function storeSet(key: string, value: unknown): Promise<void> {
-  if (hasKv()) {
+  const redis = getRedis()
+  if (redis) {
     try {
-      const { kv } = await import("@vercel/kv")
-      await kv.set(key, value)
+      await redis.set(key, value)
       return
     } catch {
-      // fall through
+      // fall through to memStore
     }
   }
   memStore.set(key, value)
