@@ -257,25 +257,27 @@ def fetch_and_apply_params(url: str) -> None:
     _print_applied_params("起動時パラメータ（STOP中は UI から更新可能）")
 
 
-_NET_ERR_PAUSE_TH = 10  # 連続エラーがこの回数に達したら自動PAUSE
+_NET_ERR_PAUSE_TH = 5  # 連続エラーがこの回数に達したら自動PAUSE（5秒で反応）
 
 
-def _post_status(ap, status_endpoint: str) -> None:
-    """ラズパイの現在ステータスを Vercel に POST する。"""
-    with ap._status_lock:
-        data = dict(ap._status)
-    with ap.lock:
-        data["mode"] = ap.mode
-    try:
-        body = json.dumps(data).encode()
-        req = urllib.request.Request(
-            status_endpoint, data=body,
-            headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=1)
-    except Exception:
-        pass  # ステータス送信失敗はサイレントに無視
+def _post_status_async(ap, status_endpoint: str) -> None:
+    """ステータス POST をデーモンスレッドで非同期実行（poll_command をブロックしない）。"""
+    def _do():
+        with ap._status_lock:
+            data = dict(ap._status)
+        with ap.lock:
+            data["mode"] = ap.mode
+        try:
+            body = json.dumps(data).encode()
+            req = urllib.request.Request(
+                status_endpoint, data=body,
+                headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
 
 
 def poll_command(ap, url: str) -> None:
@@ -376,8 +378,8 @@ def poll_command(ap, url: str) -> None:
             except Exception as e:
                 print(f"[PARAM] PAUSE中の取得エラー: {type(e).__name__}: {e}", flush=True)
 
-        # ---- ステータスを WebUI に送信（毎秒）----
-        _post_status(ap, status_endpoint)
+        # ---- ステータスを WebUI に非同期送信（コマンド取得をブロックしない）----
+        _post_status_async(ap, status_endpoint)
 
         time.sleep(1.0)
 
