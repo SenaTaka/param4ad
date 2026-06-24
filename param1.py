@@ -318,7 +318,10 @@ def poll_command(ap, url: str) -> None:
                 armed = ap.armed
                 mode  = ap.mode
 
-            # ---- デバウンス: 2回連続で同じコマンドが来たら適用 ----
+            # ---- デバウンス（非対称）----
+            # RUN: 2回連続で適用（素早く動き出す）
+            # PAUSE: 5回連続で適用（KVの一時的な不整合で止まらないようにする）
+            # QUIT: 即時適用
             if cmd == _pending_cmd:
                 _pending_count += 1
             else:
@@ -335,16 +338,16 @@ def poll_command(ap, url: str) -> None:
                 print(f"[API] alive  cmd={cmd}  mode={mode}  armed={armed}  [{state}]",
                       flush=True)
 
-            if not armed or _pending_count < 2:
-                pass  # armed でない or まだ1回しか確認していない → 適用しない
-            elif cmd == "RUN":
-                ap.set_mode("RUN")
-            elif cmd == "PAUSE":
-                ap.set_mode("PAUSE")
-            elif cmd == "QUIT":
+            if cmd == "QUIT" and armed:
                 print("[API] QUIT コマンド受信 → 終了", flush=True)
                 ap.request_quit()
                 break
+            elif not armed:
+                pass
+            elif cmd == "RUN" and _pending_count >= 2 and mode != "RUN":
+                ap.set_mode("RUN")
+            elif cmd == "PAUSE" and _pending_count >= 5 and mode != "PAUSE":
+                ap.set_mode("PAUSE")
 
         except urllib.error.URLError as e:
             _err_count += 1
