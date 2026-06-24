@@ -222,21 +222,19 @@ def _apply_params_from_dict(d: dict) -> bool:
     return before != after  # True = 変更あり
 
 
-def _print_applied_params(label: str = "適用パラメータ") -> None:
-    print(f"[PARAM] ===== {label} =====", flush=True)
-    print(f"[PARAM]  FTGコア   FOV={FGM_FOV_DEG}°  CLEAR_TH={FGM_CLEAR_TH}m  "
-          f"MIN_GAP={FGM_MIN_GAP_DEG}°  TARGET={FGM_TARGET}  ENABLE={FGM_ENABLE}", flush=True)
-    print(f"[PARAM]  Bubble    RADIUS={FGM_BUBBLE_RADIUS}m  "
-          f"MIN={FGM_BUBBLE_MIN_DEG}°  MAX={FGM_BUBBLE_MAX_DEG}°", flush=True)
-    print(f"[PARAM]  速度      BASE={BASE_SPEED}  MAX={SPEED_MAX}  TURN={TURN_SPEED}  "
-          f"STEER_DROP={SPEED_STEER_DROP}  FRONT_DROP={SPEED_FRONT_DROP}", flush=True)
-    print(f"[PARAM]  減速距離  SLOW={FRONT_SLOW}m  STOP={FRONT_STOP}m", flush=True)
-    print(f"[PARAM]  操舵      KP={KP_GAP_ANGLE}  MAX_STEER={MAX_STEER}", flush=True)
-    print(f"[PARAM]  Pivot     ENABLE={PIVOT_ENABLE}  TH={PIVOT_STEER_TH}  "
-          f"SOFT={PIVOT_SOFT_TH}  MIN_SPEED={PIVOT_MIN_SPEED}", flush=True)
-    print(f"[PARAM]  HW        FORWARD={FORWARD_DEG}°  LIDAR_DX={LIDAR_DX}m  "
-          f"MOTOR_FREQ={MOTOR_FREQ}Hz  SCALE={SPEED_CMD_SCALE}", flush=True)
-    print("[PARAM] " + "=" * (len(label) + 12), flush=True)
+def _print_applied_params(label: str = "適用パラメータ", dbg=None) -> None:
+    lines = [
+        f"[PARAM] ── {label} ──",
+        f"[PARAM]  FTG    FOV={FGM_FOV_DEG}° CLEAR={FGM_CLEAR_TH}m GAP={FGM_MIN_GAP_DEG}° TGT={FGM_TARGET}",
+        f"[PARAM]  Bubble R={FGM_BUBBLE_RADIUS}m [{FGM_BUBBLE_MIN_DEG}°..{FGM_BUBBLE_MAX_DEG}°]",
+        f"[PARAM]  Speed  BASE={BASE_SPEED} MAX={SPEED_MAX} TURN={TURN_SPEED}",
+        f"[PARAM]  Steer  KP={KP_GAP_ANGLE} MAX={MAX_STEER}  Pivot={PIVOT_ENABLE}",
+    ]
+    for line in lines:
+        if dbg:
+            dbg.log(line)
+        else:
+            print(line, flush=True)
 
 
 def fetch_and_apply_params(url: str) -> None:
@@ -254,7 +252,7 @@ def fetch_and_apply_params(url: str) -> None:
         return
 
     _apply_params_from_dict(d)
-    _print_applied_params("起動時パラメータ（STOP中は UI から更新可能）")
+    _print_applied_params("起動時パラメータ")
 
 
 
@@ -297,7 +295,7 @@ def poll_command(ap, url: str) -> None:
     while True:
         with ap.lock:
             if not ap.running:
-                print("[API] poll_command: ap.running=False → 終了", flush=True)
+                ap.dbg.log("[API] 終了")
                 break
 
         _tick += 1
@@ -319,9 +317,7 @@ def poll_command(ap, url: str) -> None:
                 mode  = ap.mode
 
             # ---- デバウンス（非対称）----
-            # RUN: 2回連続で適用（素早く動き出す）
-            # PAUSE: 5回連続で適用（KVの一時的な不整合で止まらないようにする）
-            # QUIT: 即時適用
+            # RUN: 2回連続で適用 / PAUSE: 5回連続で適用 / QUIT: 即時
             if cmd == _pending_cmd:
                 _pending_count += 1
             else:
@@ -329,17 +325,15 @@ def poll_command(ap, url: str) -> None:
                 _pending_count = 1
 
             if cmd != _last_cmd:
-                state = "受付中" if armed else "待機中(g で受付開始)"
-                print(f"[API] command: {_last_cmd} → {cmd} (count={_pending_count}) [{state}]", flush=True)
+                state = "受付中" if armed else "g キーで受付開始"
+                ap.dbg.log(f"[API] コマンド変化: {_last_cmd} → {cmd}  [{state}]")
                 _last_cmd = cmd
 
-            if _ok_count % 10 == 0:
-                state = "受付中" if armed else "待機中(g キーで受付開始)"
-                print(f"[API] alive  cmd={cmd}  mode={mode}  armed={armed}  [{state}]",
-                      flush=True)
+            if _ok_count % 30 == 0:  # 30秒ごとに生存確認
+                ap.dbg.log(f"[API] 通信OK  cmd={cmd}  mode={mode}  armed={armed}")
 
             if cmd == "QUIT" and armed:
-                print("[API] QUIT コマンド受信 → 終了", flush=True)
+                ap.dbg.log("[API] QUIT → 終了")
                 ap.request_quit()
                 break
             elif not armed:
@@ -351,13 +345,12 @@ def poll_command(ap, url: str) -> None:
 
         except urllib.error.URLError as e:
             _err_count += 1
-            if _err_count == 1 or _err_count % 5 == 0:
-                print(f"[API] poll URLError ({_err_count}回連続): {e.reason}", flush=True)
+            if _err_count == 1 or _err_count % 10 == 0:
+                ap.dbg.log(f"[API] 通信エラー ({_err_count}回連続): {e.reason}")
         except Exception as e:
             _err_count += 1
-            if _err_count == 1 or _err_count % 5 == 0:
-                print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}",
-                      flush=True)
+            if _err_count == 1 or _err_count % 10 == 0:
+                ap.dbg.log(f"[API] エラー ({_err_count}回連続): {type(e).__name__}: {e}")
 
         # ---- PAUSE 中のみ: パラメータを 3 秒ごとに取得して変化があれば反映 ----
         with ap.lock:
@@ -375,12 +368,10 @@ def poll_command(ap, url: str) -> None:
                     _last_params_raw = body
                     changed = _apply_params_from_dict(json.loads(body))
                     if changed:
-                        _print_applied_params("PAUSE中に更新されたパラメータ")
-                    else:
-                        print("[PARAM] PAUSE中チェック: 変更なし", flush=True)
+                        _print_applied_params("パラメータ更新", ap.dbg)
 
             except Exception as e:
-                print(f"[PARAM] PAUSE中の取得エラー: {type(e).__name__}: {e}", flush=True)
+                ap.dbg.log(f"[PARAM] 取得エラー: {type(e).__name__}: {e}")
 
         # ---- ステータスを WebUI に非同期送信（コマンド取得をブロックしない）----
         _post_status_async(ap, status_endpoint)
@@ -531,22 +522,31 @@ class DebugLog:
         sys.stdout.write(s)
         sys.stdout.flush()
 
+    def _print_above(self, line: str):
+        """ステータス行を壊さずその上に1行出力する（スレッドセーフ前提で呼ぶ）。"""
+        if self.one_line:
+            self._clear_line()
+            sys.stdout.write(line + "\n")
+            if self._last_status:
+                sys.stdout.write(self._last_status)
+            sys.stdout.flush()
+        else:
+            print(line, flush=True)
+
+    def log(self, msg: str):
+        """API・システムメッセージをステータス行を壊さず出力する。"""
+        with self._lock:
+            self.ring.append(msg)
+        self._print_above(msg)
+
     def event(self, msg: str):
         with self._lock:
             if not self.enable:
                 return
             s = f"[EVT] {msg}"
             self.ring.append(s)
-            last = self._last_status
 
-        if self.one_line:
-            self._clear_line()
-            sys.stdout.write(s + "\n")
-            if last:
-                sys.stdout.write(last)
-            sys.stdout.flush()
-        else:
-            print("\n" + s, flush=True)
+        self._print_above(s)
 
     def sample(self, msg: str, now: float):
         with self._lock:
