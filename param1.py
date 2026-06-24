@@ -257,7 +257,6 @@ def fetch_and_apply_params(url: str) -> None:
     _print_applied_params("起動時パラメータ（STOP中は UI から更新可能）")
 
 
-_NET_ERR_PAUSE_TH = 5  # 連続エラーがこの回数に達したら自動PAUSE（5秒で反応）
 
 
 def _post_status_async(ap, status_endpoint: str) -> None:
@@ -342,18 +341,11 @@ def poll_command(ap, url: str) -> None:
             _err_count += 1
             if _err_count == 1 or _err_count % 5 == 0:
                 print(f"[API] poll URLError ({_err_count}回連続): {e.reason}", flush=True)
-            # ネット断続が一定回数続いたら安全のため自動PAUSE
-            if _err_count == _NET_ERR_PAUSE_TH:
-                print(f"[API] ネット障害 {_err_count}回連続 → 自動PAUSE", flush=True)
-                ap.set_mode("PAUSE")
         except Exception as e:
             _err_count += 1
             if _err_count == 1 or _err_count % 5 == 0:
                 print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}",
                       flush=True)
-            if _err_count == _NET_ERR_PAUSE_TH:
-                print(f"[API] ネット障害 {_err_count}回連続 → 自動PAUSE", flush=True)
-                ap.set_mode("PAUSE")
 
         # ---- PAUSE 中のみ: パラメータを 3 秒ごとに取得して変化があれば反映 ----
         with ap.lock:
