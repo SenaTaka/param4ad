@@ -331,7 +331,7 @@ def poll_command(ap, url: str) -> None:
                 ap.dbg.log(f"[API] コマンド変化: {_last_cmd} → {cmd}  [{state}]")
                 _last_cmd = cmd
 
-            if _ok_count % 30 == 0:  # 30秒ごとに生存確認
+            if _ok_count % 100 == 0:  # 約30秒ごとに生存確認（0.3s×100）
                 ap.dbg.log(f"[API] 通信OK  cmd={cmd}  mode={mode}  armed={armed}")
 
             if cmd == "QUIT" and armed:
@@ -341,8 +341,9 @@ def poll_command(ap, url: str) -> None:
             elif not armed:
                 pass
             elif cmd == "RUN" and _pending_count >= 2 and mode != "RUN":
+                # Redis導入済みのため不整合リスク低。2回確認で即適用
                 ap.set_mode("RUN")
-            elif cmd == "PAUSE" and _pending_count >= 5 and mode != "PAUSE":
+            elif cmd == "PAUSE" and _pending_count >= 2 and mode != "PAUSE":
                 ap.set_mode("PAUSE")
 
         except urllib.error.URLError as e:
@@ -354,11 +355,11 @@ def poll_command(ap, url: str) -> None:
             if _err_count == 1 or _err_count % 10 == 0:
                 ap.dbg.log(f"[API] エラー ({_err_count}回連続): {type(e).__name__}: {e}")
 
-        # ---- PAUSE 中のみ: パラメータを 3 秒ごとに取得して変化があれば反映 ----
+        # ---- PAUSE 中のみ: パラメータを10tickごとに取得（約3秒）----
         with ap.lock:
             is_paused = (ap.mode == "PAUSE")
 
-        if is_paused and _tick % 3 == 0:
+        if is_paused and _tick % 10 == 0:
             try:
                 req = urllib.request.Request(
                     param_endpoint, headers={"User-Agent": "raspi-ftg/1.0"}
@@ -375,10 +376,10 @@ def poll_command(ap, url: str) -> None:
             except Exception as e:
                 ap.dbg.log(f"[PARAM] 取得エラー: {type(e).__name__}: {e}")
 
-        # ---- ステータスを WebUI に非同期送信（コマンド取得をブロックしない）----
+        # ---- ステータスを WebUI に非同期送信 ----
         _post_status_async(ap, status_endpoint)
 
-        time.sleep(1.0)
+        time.sleep(0.3)  # 0.3秒ごとにポーリング（1秒→0.3秒）
 
 
 # ==========================================
