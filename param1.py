@@ -33,7 +33,7 @@ from collections import deque
 import ydlidar
 import RPi.GPIO as GPIO
 
-os.system("sudo PARAM_SERVER_URL=https://param4ad.vercel.app")
+# PARAM_SERVER_URL は起動前にシェルで設定: export PARAM_SERVER_URL=https://param4ad.vercel.app
 
 # ==========================================
 # 0) 運用パラメータ（要調整）
@@ -112,6 +112,8 @@ PWMB, BIN1, BIN2 = 16, 26, 19
 # ラズパイ起動時に export PARAM_SERVER_URL=https://param4ad.vercel.app
 # を設定するとパラメータを取得し、コマンド(RUN/PAUSE)を監視する
 
+_params_lock = threading.Lock()  # グローバルパラメータ更新のロック
+
 
 def test_api_connection(url: str) -> bool:
     """起動時に /api/params と /api/command の両方をテストして結果を表示する。"""
@@ -143,8 +145,8 @@ def test_api_connection(url: str) -> bool:
     return all_ok
 
 
-def _apply_params_from_dict(d: dict) -> list:
-    """dict からグローバル変数へ反映し、変更されたキーのリストを返す。"""
+def _apply_params_from_dict(d: dict) -> bool:
+    """dict からグローバル変数へ反映し、変更があった場合 True を返す。"""
     global FORWARD_DEG, LIDAR_DX, LIDAR_DY
     global FGM_ENABLE, FGM_FOV_DEG, FGM_BIN_DEG, FGM_SMOOTH_WIN
     global FGM_CLEAR_TH, FGM_MIN_GAP_DEG, FGM_TARGET
@@ -158,46 +160,65 @@ def _apply_params_from_dict(d: dict) -> list:
     def flt(k, cur): return float(d[k]) if k in d else cur
     def bln(k, cur): return bool(d[k]) if k in d else cur
     def s(k, cur):   return str(d[k])   if k in d else cur
+    def odd(v):      v = int(v); return v if v % 2 == 1 else v + 1  # 奇数に強制
 
-    before = (FGM_CLEAR_TH, FGM_FOV_DEG, FGM_BUBBLE_RADIUS, KP_GAP_ANGLE,
-              BASE_SPEED, SPEED_MAX, TURN_SPEED, MAX_STEER, PIVOT_ENABLE,
-              FORWARD_DEG, MOTOR_FREQ)
+    with _params_lock:
+        before = (
+            FORWARD_DEG, LIDAR_DX, LIDAR_DY,
+            FGM_ENABLE, FGM_FOV_DEG, FGM_BIN_DEG, FGM_SMOOTH_WIN,
+            FGM_CLEAR_TH, FGM_MIN_GAP_DEG, FGM_TARGET,
+            FGM_BUBBLE_RADIUS, FGM_BUBBLE_MIN_DEG, FGM_BUBBLE_MAX_DEG,
+            KP_GAP_ANGLE, MAX_STEER,
+            BASE_SPEED, SPEED_MIN, SPEED_MAX, TURN_SPEED,
+            SPEED_STEER_DROP, SPEED_FRONT_DROP, FRONT_SLOW, FRONT_STOP,
+            PIVOT_ENABLE, PIVOT_STEER_TH, PIVOT_SOFT_TH, PIVOT_MIN_SPEED,
+            EMA_ALPHA, FRONT_WINDOW_DEG, MOTOR_FREQ, SPEED_CMD_SCALE,
+        )
 
-    FORWARD_DEG        = flt("FORWARD_DEG",        FORWARD_DEG)
-    LIDAR_DX           = flt("LIDAR_DX",            LIDAR_DX)
-    LIDAR_DY           = flt("LIDAR_DY",            LIDAR_DY)
-    FGM_ENABLE         = bln("FGM_ENABLE",          FGM_ENABLE)
-    FGM_FOV_DEG        = flt("FGM_FOV_DEG",         FGM_FOV_DEG)
-    FGM_BIN_DEG        = flt("FGM_BIN_DEG",         FGM_BIN_DEG)
-    FGM_SMOOTH_WIN     = int(flt("FGM_SMOOTH_WIN",  FGM_SMOOTH_WIN))
-    FGM_CLEAR_TH       = flt("FGM_CLEAR_TH",        FGM_CLEAR_TH)
-    FGM_MIN_GAP_DEG    = flt("FGM_MIN_GAP_DEG",     FGM_MIN_GAP_DEG)
-    FGM_TARGET         = s(  "FGM_TARGET",           FGM_TARGET)
-    FGM_BUBBLE_RADIUS  = flt("FGM_BUBBLE_RADIUS",    FGM_BUBBLE_RADIUS)
-    FGM_BUBBLE_MIN_DEG = flt("FGM_BUBBLE_MIN_DEG",   FGM_BUBBLE_MIN_DEG)
-    FGM_BUBBLE_MAX_DEG = flt("FGM_BUBBLE_MAX_DEG",   FGM_BUBBLE_MAX_DEG)
-    KP_GAP_ANGLE       = flt("KP_GAP_ANGLE",         KP_GAP_ANGLE)
-    MAX_STEER          = flt("MAX_STEER",             MAX_STEER)
-    BASE_SPEED         = flt("BASE_SPEED",            BASE_SPEED)
-    SPEED_MIN          = flt("SPEED_MIN",             SPEED_MIN)
-    SPEED_MAX          = flt("SPEED_MAX",             SPEED_MAX)
-    TURN_SPEED         = flt("TURN_SPEED",            TURN_SPEED)
-    SPEED_STEER_DROP   = flt("SPEED_STEER_DROP",      SPEED_STEER_DROP)
-    SPEED_FRONT_DROP   = flt("SPEED_FRONT_DROP",      SPEED_FRONT_DROP)
-    FRONT_SLOW         = flt("FRONT_SLOW",            FRONT_SLOW)
-    FRONT_STOP         = flt("FRONT_STOP",            FRONT_STOP)
-    PIVOT_ENABLE       = bln("PIVOT_ENABLE",          PIVOT_ENABLE)
-    PIVOT_STEER_TH     = flt("PIVOT_STEER_TH",        PIVOT_STEER_TH)
-    PIVOT_SOFT_TH      = flt("PIVOT_SOFT_TH",         PIVOT_SOFT_TH)
-    PIVOT_MIN_SPEED    = flt("PIVOT_MIN_SPEED",        PIVOT_MIN_SPEED)
-    EMA_ALPHA          = flt("EMA_ALPHA",              EMA_ALPHA)
-    FRONT_WINDOW_DEG   = int(flt("FRONT_WINDOW_DEG",  FRONT_WINDOW_DEG))
-    MOTOR_FREQ         = int(flt("MOTOR_FREQ",         MOTOR_FREQ))
-    SPEED_CMD_SCALE    = flt("SPEED_CMD_SCALE",        SPEED_CMD_SCALE)
+        FORWARD_DEG        = flt("FORWARD_DEG",        FORWARD_DEG)
+        LIDAR_DX           = flt("LIDAR_DX",            LIDAR_DX)
+        LIDAR_DY           = flt("LIDAR_DY",            LIDAR_DY)
+        FGM_ENABLE         = bln("FGM_ENABLE",          FGM_ENABLE)
+        FGM_FOV_DEG        = flt("FGM_FOV_DEG",         FGM_FOV_DEG)
+        FGM_BIN_DEG        = flt("FGM_BIN_DEG",         FGM_BIN_DEG)
+        FGM_SMOOTH_WIN     = odd(flt("FGM_SMOOTH_WIN",  FGM_SMOOTH_WIN))  # 常に奇数
+        FGM_CLEAR_TH       = flt("FGM_CLEAR_TH",        FGM_CLEAR_TH)
+        FGM_MIN_GAP_DEG    = flt("FGM_MIN_GAP_DEG",     FGM_MIN_GAP_DEG)
+        FGM_TARGET         = s(  "FGM_TARGET",           FGM_TARGET)
+        FGM_BUBBLE_RADIUS  = flt("FGM_BUBBLE_RADIUS",    FGM_BUBBLE_RADIUS)
+        FGM_BUBBLE_MIN_DEG = flt("FGM_BUBBLE_MIN_DEG",   FGM_BUBBLE_MIN_DEG)
+        FGM_BUBBLE_MAX_DEG = flt("FGM_BUBBLE_MAX_DEG",   FGM_BUBBLE_MAX_DEG)
+        KP_GAP_ANGLE       = flt("KP_GAP_ANGLE",         KP_GAP_ANGLE)
+        MAX_STEER          = flt("MAX_STEER",             MAX_STEER)
+        BASE_SPEED         = flt("BASE_SPEED",            BASE_SPEED)
+        SPEED_MIN          = flt("SPEED_MIN",             SPEED_MIN)
+        SPEED_MAX          = flt("SPEED_MAX",             SPEED_MAX)
+        TURN_SPEED         = flt("TURN_SPEED",            TURN_SPEED)
+        SPEED_STEER_DROP   = flt("SPEED_STEER_DROP",      SPEED_STEER_DROP)
+        SPEED_FRONT_DROP   = flt("SPEED_FRONT_DROP",      SPEED_FRONT_DROP)
+        FRONT_SLOW         = flt("FRONT_SLOW",            FRONT_SLOW)
+        FRONT_STOP         = flt("FRONT_STOP",            FRONT_STOP)
+        PIVOT_ENABLE       = bln("PIVOT_ENABLE",          PIVOT_ENABLE)
+        PIVOT_STEER_TH     = flt("PIVOT_STEER_TH",        PIVOT_STEER_TH)
+        PIVOT_SOFT_TH      = flt("PIVOT_SOFT_TH",         PIVOT_SOFT_TH)
+        PIVOT_MIN_SPEED    = flt("PIVOT_MIN_SPEED",        PIVOT_MIN_SPEED)
+        EMA_ALPHA          = flt("EMA_ALPHA",              EMA_ALPHA)
+        FRONT_WINDOW_DEG   = int(flt("FRONT_WINDOW_DEG",  FRONT_WINDOW_DEG))
+        MOTOR_FREQ         = int(flt("MOTOR_FREQ",         MOTOR_FREQ))
+        SPEED_CMD_SCALE    = flt("SPEED_CMD_SCALE",        SPEED_CMD_SCALE)
 
-    after = (FGM_CLEAR_TH, FGM_FOV_DEG, FGM_BUBBLE_RADIUS, KP_GAP_ANGLE,
-             BASE_SPEED, SPEED_MAX, TURN_SPEED, MAX_STEER, PIVOT_ENABLE,
-             FORWARD_DEG, MOTOR_FREQ)
+        after = (
+            FORWARD_DEG, LIDAR_DX, LIDAR_DY,
+            FGM_ENABLE, FGM_FOV_DEG, FGM_BIN_DEG, FGM_SMOOTH_WIN,
+            FGM_CLEAR_TH, FGM_MIN_GAP_DEG, FGM_TARGET,
+            FGM_BUBBLE_RADIUS, FGM_BUBBLE_MIN_DEG, FGM_BUBBLE_MAX_DEG,
+            KP_GAP_ANGLE, MAX_STEER,
+            BASE_SPEED, SPEED_MIN, SPEED_MAX, TURN_SPEED,
+            SPEED_STEER_DROP, SPEED_FRONT_DROP, FRONT_SLOW, FRONT_STOP,
+            PIVOT_ENABLE, PIVOT_STEER_TH, PIVOT_SOFT_TH, PIVOT_MIN_SPEED,
+            EMA_ALPHA, FRONT_WINDOW_DEG, MOTOR_FREQ, SPEED_CMD_SCALE,
+        )
+
     return before != after  # True = 変更あり
 
 
@@ -236,10 +257,32 @@ def fetch_and_apply_params(url: str) -> None:
     _print_applied_params("起動時パラメータ（STOP中は UI から更新可能）")
 
 
+_NET_ERR_PAUSE_TH = 10  # 連続エラーがこの回数に達したら自動PAUSE
+
+
+def _post_status(ap, status_endpoint: str) -> None:
+    """ラズパイの現在ステータスを Vercel に POST する。"""
+    with ap._status_lock:
+        data = dict(ap._status)
+    with ap.lock:
+        data["mode"] = ap.mode
+    try:
+        body = json.dumps(data).encode()
+        req = urllib.request.Request(
+            status_endpoint, data=body,
+            headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=1)
+    except Exception:
+        pass  # ステータス送信失敗はサイレントに無視
+
+
 def poll_command(ap, url: str) -> None:
     """コマンドを 1 秒ごと、PAUSE 中はパラメータも 3 秒ごとに取得して反映する。"""
-    cmd_endpoint   = f"{url}/api/command"
-    param_endpoint = f"{url}/api/params"
+    cmd_endpoint    = f"{url}/api/command"
+    param_endpoint  = f"{url}/api/params"
+    status_endpoint = f"{url}/api/status"
     print(f"[API] poll_command started  cmd={cmd_endpoint}", flush=True)
 
     _last_cmd        = None
@@ -297,11 +340,18 @@ def poll_command(ap, url: str) -> None:
             _err_count += 1
             if _err_count == 1 or _err_count % 5 == 0:
                 print(f"[API] poll URLError ({_err_count}回連続): {e.reason}", flush=True)
+            # ネット断続が一定回数続いたら安全のため自動PAUSE
+            if _err_count == _NET_ERR_PAUSE_TH:
+                print(f"[API] ネット障害 {_err_count}回連続 → 自動PAUSE", flush=True)
+                ap.set_mode("PAUSE")
         except Exception as e:
             _err_count += 1
             if _err_count == 1 or _err_count % 5 == 0:
                 print(f"[API] poll error ({_err_count}回連続): {type(e).__name__}: {e}",
                       flush=True)
+            if _err_count == _NET_ERR_PAUSE_TH:
+                print(f"[API] ネット障害 {_err_count}回連続 → 自動PAUSE", flush=True)
+                ap.set_mode("PAUSE")
 
         # ---- PAUSE 中のみ: パラメータを 3 秒ごとに取得して変化があれば反映 ----
         with ap.lock:
@@ -325,6 +375,9 @@ def poll_command(ap, url: str) -> None:
 
             except Exception as e:
                 print(f"[PARAM] PAUSE中の取得エラー: {type(e).__name__}: {e}", flush=True)
+
+        # ---- ステータスを WebUI に送信（毎秒）----
+        _post_status(ap, status_endpoint)
 
         time.sleep(1.0)
 
@@ -584,6 +637,12 @@ class MotorDriver:
         finally:
             GPIO.cleanup()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
 
 # ==========================================
 # 3) LiDAR初期化（あなたの設定を踏襲）
@@ -638,6 +697,14 @@ class AutoPilot:
 
         self._last_target_deg = 0.0
 
+        # ラズパイ→WebUI フィードバック用（poll_command が読んで POST）
+        self._status = {
+            "mode": "PAUSE", "d_front": None, "steer": 0.0,
+            "left": 0.0, "right": 0.0, "tgt_deg": 0.0,
+            "dmin": None, "gap_width": None, "ts": 0.0,
+        }
+        self._status_lock = threading.Lock()
+
     def set_armed(self, armed: bool):
         with self.lock:
             prev = self.armed
@@ -663,9 +730,7 @@ class AutoPilot:
         best = None
         for p in self.scan.points:
             dist = float(p.range)
-            if dist <= 0:
-                continue
-            if dist < SIDE_MIN_VALID or dist > MAX_VALID:
+            if not (SIDE_MIN_VALID < dist < MAX_VALID):  # NaN/Inf/0/負数をまとめて除外
                 continue
 
             abs_deg = (math.degrees(p.angle) + 360.0) % 360.0
@@ -694,9 +759,7 @@ class AutoPilot:
 
         for p in self.scan.points:
             dist = float(p.range)
-            if dist <= 0:
-                continue
-            if dist < SIDE_MIN_VALID or dist > MAX_VALID:
+            if not (SIDE_MIN_VALID < dist < MAX_VALID):  # NaN/Inf/0/負数をまとめて除外
                 continue
 
             abs_deg = (math.degrees(p.angle) + 360.0) % 360.0
@@ -823,7 +886,6 @@ class AutoPilot:
 
             ls, rs = apply_speed_limits(left), apply_speed_limits(right)
 
-
             if self.dbg.level >= 1:
                 self.dbg.sample(
                     f"FGM NOGAP "
@@ -831,10 +893,15 @@ class AutoPilot:
                     f"dmin{fmt(dmin,2)} "
                     f"tgt{fmt(tgt_deg,1)} "
                     f"s{fmt(steer,3)} v{fmt(v,2)} "
-                    f"cmd{fmt(apply_speed_limits(left),2)},{fmt(apply_speed_limits(right),2)}",
+                    f"cmd{fmt(ls,2)},{fmt(rs,2)}",
                     now
                 )
-            return (apply_speed_limits(left), apply_speed_limits(right))
+            with self._status_lock:
+                self._status.update({"mode": self.mode, "d_front": self.d_front,
+                                     "steer": steer, "left": ls, "right": rs,
+                                     "tgt_deg": tgt_deg, "dmin": dmin,
+                                     "gap_width": None, "ts": now})
+            return (ls, rs)
 
         tgt_deg, tgt_dist = self._fgm_pick_target(ranges2, angles, gap)
         self._last_target_deg = tgt_deg
@@ -902,6 +969,13 @@ class AutoPilot:
                 now
             )
 
+        i0, i1 = gap
+        gap_w = angles[i1] - angles[i0]
+        with self._status_lock:
+            self._status.update({"mode": self.mode, "d_front": self.d_front,
+                                 "steer": steer, "left": ls, "right": rs,
+                                 "tgt_deg": tgt_deg, "dmin": dmin,
+                                 "gap_width": gap_w, "ts": now})
         return (ls, rs)
 
     def loop(self):
@@ -1007,45 +1081,35 @@ def main():
         print("g: 開始  s/Space: 停止  q: 終了  d:debug  1/2/3:level  p:dump")
     print("================================================")
 
-    motor = MotorDriver()
     laser = None
-    try:
-        laser = init_lidar()
-        ap = AutoPilot(motor, laser)
-
-        th = threading.Thread(target=ap.loop, daemon=True)
-        th.start()
-
-        # Vercel コマンドポーリングスレッド
-        if _server_url:
-            cmd_th = threading.Thread(
-                target=poll_command, args=(ap, _server_url), daemon=True
-            )
-            cmd_th.start()
-            print(f"[API] poll_command スレッド開始 (1秒ごとに {_server_url}/api/command をチェック)", flush=True)
-
-        ap.set_mode("PAUSE")
-        keyboard_loop(ap)
-
-    except KeyboardInterrupt:
-        print("\n停止操作を受信", flush=True)
-    finally:
+    with MotorDriver() as motor:  # __exit__ で GPIO.cleanup() を保証
         try:
-            motor.stop()
-        except Exception:
-            pass
+            laser = init_lidar()
+            ap = AutoPilot(motor, laser)
 
-        if laser is not None:
-            try:
-                laser.turnOff()
-                laser.disconnecting()
-            except Exception:
-                pass
+            th = threading.Thread(target=ap.loop, daemon=True)
+            th.start()
 
-        try:
-            motor.close()
-        except Exception:
-            pass
+            # Vercel コマンドポーリングスレッド
+            if _server_url:
+                cmd_th = threading.Thread(
+                    target=poll_command, args=(ap, _server_url), daemon=True
+                )
+                cmd_th.start()
+                print(f"[API] poll_command スレッド開始 (1秒ごとに {_server_url}/api/command をチェック)", flush=True)
+
+            ap.set_mode("PAUSE")
+            keyboard_loop(ap)
+
+        except KeyboardInterrupt:
+            print("\n停止操作を受信", flush=True)
+        finally:
+            if laser is not None:
+                try:
+                    laser.turnOff()
+                    laser.disconnecting()
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":

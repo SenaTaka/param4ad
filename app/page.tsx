@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { DEFAULT_PARAMS, DEFAULT_COMMAND } from "@/lib/defaults"
 import type { Params, Command } from "@/lib/defaults"
+import type { RaspiStatus } from "@/app/api/status/route"
 
 // ---- Field config ----
 
@@ -195,6 +196,93 @@ function SelectInput({ field, value, onChange }: {
   )
 }
 
+// ---- Raspi Status Panel ----
+
+function SteerBar({ value }: { value: number }) {
+  const pct = Math.round(Math.abs(value) * 50)
+  const isLeft = value > 0
+  return (
+    <div className="flex items-center gap-1.5 w-full">
+      <span className="text-[10px] text-gray-500 w-3 text-right">L</span>
+      <div className="flex-1 h-2 bg-[#1a3048] rounded-full overflow-hidden flex">
+        <div className="w-1/2 flex justify-end">
+          {isLeft && <div className="h-full bg-cyan-400 rounded-l-full" style={{ width: `${pct}%` }} />}
+        </div>
+        <div className="w-px bg-gray-600" />
+        <div className="w-1/2">
+          {!isLeft && <div className="h-full bg-cyan-400 rounded-r-full" style={{ width: `${pct}%` }} />}
+        </div>
+      </div>
+      <span className="text-[10px] text-gray-500 w-3">R</span>
+    </div>
+  )
+}
+
+function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
+  const now = Date.now() / 1000
+  const age = status ? now - status.ts : Infinity
+  const connected = age < 5
+
+  return (
+    <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest font-mono">ラズパイ状態</h2>
+        <div className="flex items-center gap-1.5">
+          <span className={`inline-flex h-2 w-2 rounded-full ${connected ? "bg-green-400" : "bg-gray-600"}`} />
+          <span className="text-[10px] font-mono text-gray-500">
+            {connected ? `${Math.round(age)}秒前` : status ? "切断" : "未接続"}
+          </span>
+        </div>
+      </div>
+
+      {!connected ? (
+        <p className="text-xs text-gray-600 font-mono text-center py-2">ラズパイからのデータなし</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+          <div>
+            <span className="text-[10px] text-gray-500 font-mono">モード</span>
+            <p className={`text-sm font-bold font-mono ${status!.mode === "RUN" ? "text-green-400" : "text-yellow-400"}`}>
+              {status!.mode}
+            </p>
+          </div>
+          <div>
+            <span className="text-[10px] text-gray-500 font-mono">前方距離</span>
+            <p className="text-sm font-bold font-mono text-white">
+              {status!.d_front !== null ? `${status!.d_front.toFixed(2)} m` : "—"}
+            </p>
+          </div>
+          <div>
+            <span className="text-[10px] text-gray-500 font-mono">左モーター</span>
+            <p className="text-sm font-bold font-mono text-cyan-300">{status!.left.toFixed(2)}</p>
+          </div>
+          <div>
+            <span className="text-[10px] text-gray-500 font-mono">右モーター</span>
+            <p className="text-sm font-bold font-mono text-cyan-300">{status!.right.toFixed(2)}</p>
+          </div>
+          <div className="col-span-2">
+            <span className="text-[10px] text-gray-500 font-mono block mb-1">
+              ステア {status!.steer >= 0 ? "←" : "→"} {Math.abs(status!.steer).toFixed(2)}
+            </span>
+            <SteerBar value={status!.steer} />
+          </div>
+          {status!.dmin !== null && (
+            <div>
+              <span className="text-[10px] text-gray-500 font-mono">最近障害物</span>
+              <p className="text-sm font-mono text-gray-300">{status!.dmin.toFixed(2)} m</p>
+            </div>
+          )}
+          {status!.gap_width !== null && (
+            <div>
+              <span className="text-[10px] text-gray-500 font-mono">ギャップ幅</span>
+              <p className="text-sm font-mono text-gray-300">{status!.gap_width.toFixed(1)}°</p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ---- Main page ----
 
 export default function Home() {
@@ -202,6 +290,8 @@ export default function Home() {
   const [command, setCommand] = useState<Command>(DEFAULT_COMMAND)
   const [activeTab, setActiveTab] = useState(0)
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const [raspiStatus, setRaspiStatus] = useState<RaspiStatus | null>(null)
 
   // Load initial state
   useEffect(() => {
@@ -227,6 +317,19 @@ export default function Home() {
     return () => clearInterval(id)
   }, [])
 
+  // Poll raspi status every 2s
+  useEffect(() => {
+    const poll = () => {
+      fetch("/api/status")
+        .then(r => r.json())
+        .then((d: RaspiStatus | null) => setRaspiStatus(d))
+        .catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 2000)
+    return () => clearInterval(id)
+  }, [])
+
   const updateParam = useCallback((key: keyof Params, value: number | boolean | string) => {
     setParams(prev => ({ ...prev, [key]: value }))
   }, [])
@@ -239,7 +342,12 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
       })
-      setSaveStatus(r.ok ? "saved" : "error")
+      if (r.ok) {
+        setSaveStatus("saved")
+        setLastSavedAt(new Date())
+      } else {
+        setSaveStatus("error")
+      }
     } catch {
       setSaveStatus("error")
     }
@@ -309,6 +417,9 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Raspi Status */}
+      <RaspiStatusPanel status={raspiStatus} />
+
       {/* Params */}
       <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl overflow-hidden">
         {/* Tabs */}
@@ -366,26 +477,40 @@ export default function Home() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-[#1a3048] bg-[#04090f]/50">
-          <button
-            onClick={handleReset}
-            className="min-h-[44px] px-4 py-2 rounded-xl text-xs text-gray-500 hover:text-gray-200 hover:bg-[#1a3048] transition-all active:scale-[0.97] font-mono"
-          >
-            デフォルトに戻す
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saveStatus === "saving"}
-            className={`min-h-[44px] px-6 rounded-xl text-sm font-bold transition-all active:scale-[0.97] ${
-              saveStatus === "saved"
-                ? "bg-green-700 text-white"
-                : saveStatus === "error"
-                ? "bg-red-700 text-white"
-                : "bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-60"
-            }`}
-          >
-            {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? "✓ 保存完了" : saveStatus === "error" ? "エラー" : "パラメータを保存"}
-          </button>
+        <div className="border-t border-[#1a3048] bg-[#04090f]/50">
+          {command === "RUN" && (
+            <p className="text-xs text-yellow-400/80 text-center py-2 font-mono border-b border-[#1a3048]">
+              ⚠ RUN中はパラメータが反映されません — STOPしてから保存してください
+            </p>
+          )}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={handleReset}
+                className="min-h-[44px] px-4 py-2 rounded-xl text-xs text-gray-500 hover:text-gray-200 hover:bg-[#1a3048] transition-all active:scale-[0.97] font-mono text-left"
+              >
+                デフォルトに戻す
+              </button>
+              {lastSavedAt && (
+                <span className="text-[10px] text-gray-600 font-mono pl-4">
+                  最終保存 {lastSavedAt.toLocaleTimeString("ja-JP")}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={saveStatus === "saving"}
+              className={`min-h-[44px] px-6 rounded-xl text-sm font-bold transition-all active:scale-[0.97] ${
+                saveStatus === "saved"
+                  ? "bg-green-700 text-white"
+                  : saveStatus === "error"
+                  ? "bg-red-700 text-white"
+                  : "bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-60"
+              }`}
+            >
+              {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? "✓ 保存完了" : saveStatus === "error" ? "エラー" : "パラメータを保存"}
+            </button>
+          </div>
         </div>
       </section>
 
