@@ -313,3 +313,14 @@ export function stepRobot(robot: RobotState, ls: number, rs: number, dt: number)
     heading: robot.heading - omega * dt,  // y-down canvas: CCW = heading decreases
   }
 }
+
+export function crossesLine(prev: Vec2, curr: Vec2, lineA: Vec2, lineB: Vec2): boolean {
+  const D = sub(curr, prev)
+  const seg = sub(lineB, lineA)
+  const r = sub(lineA, prev)
+  const denom = cross2(D, seg)
+  if (Math.abs(denom) < 1e-10) return false
+  const t = cross2(r, seg) / denom
+  const s = cross2(r, D) / denom
+  return t >= 0 && t <= 1 && s >= 0 && s <= 1
+}
