@@ -220,7 +220,7 @@ function SteerBar({ value }: { value: number }) {
 function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
   const now = Date.now() / 1000
   const age = status ? now - status.ts : Infinity
-  const connected = age < 5
+  const connected = age < 10
 
   return (
     <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4">
@@ -293,22 +293,33 @@ export default function Home() {
   const [raspiStatus, setRaspiStatus] = useState<RaspiStatus | null>(null)
 
   // Load initial state
+  // 初回ロード
   useEffect(() => {
-    fetch("/api/params")
-      .then(r => r.json())
-      .then(setParams)
-      .catch(() => {})
-
     fetch("/api/command")
       .then(r => r.json())
       .then(d => setCommand(d.command))
       .catch(() => {})
   }, [])
 
+  // パラメータを5秒ごとに自動同期（ユーザーが操作中は上書きしない）
+  const [isDirty, setIsDirty] = useState(false)
+  useEffect(() => {
+    const sync = () => {
+      if (isDirty) return  // 未保存の変更があるときは上書きしない
+      fetch("/api/params")
+        .then(r => r.json())
+        .then(setParams)
+        .catch(() => {})
+    }
+    sync()
+    const id = setInterval(sync, 5000)
+    return () => clearInterval(id)
+  }, [isDirty])
+
   // コマンドはユーザー操作のみで更新（サーバーポーリング廃止）
   // → マルチインスタンス不整合でUIが逆転するのを防ぐ
 
-  // Poll raspi status every 2s
+  // ラズパイステータスを2秒ごとに取得
   useEffect(() => {
     const poll = () => {
       fetch("/api/status")
@@ -323,6 +334,7 @@ export default function Home() {
 
   const updateParam = useCallback((key: keyof Params, value: number | boolean | string) => {
     setParams(prev => ({ ...prev, [key]: value }))
+    setIsDirty(true)
   }, [])
 
   const handleSave = async () => {
@@ -336,6 +348,7 @@ export default function Home() {
       if (r.ok) {
         setSaveStatus("saved")
         setLastSavedAt(new Date())
+        setIsDirty(false)
       } else {
         setSaveStatus("error")
       }
