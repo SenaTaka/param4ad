@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { DEFAULT_PARAMS, DEFAULT_COMMAND } from "@/lib/defaults"
-import type { Params, Command } from "@/lib/defaults"
-import type { RaspiStatus } from "@/app/api/status/route"
+import type { Params, Command, RaspiStatus } from "@/lib/defaults"
 
 // ---- Field config ----
 

@@ -1,17 +1,8 @@
 import { NextResponse } from "next/server"
 import { storeGet, storeSet } from "@/lib/store"
+import type { RaspiStatus } from "@/lib/defaults"
 
-export type RaspiStatus = {
-  mode: "RUN" | "PAUSE"
-  d_front: number | null
-  steer: number
-  left: number
-  right: number
-  tgt_deg: number
-  dmin: number | null
-  gap_width: number | null
-  ts: number
-}
+export type { RaspiStatus }
 
 export async function GET() {
   const status = await storeGet<RaspiStatus | null>("raspi_status", null)

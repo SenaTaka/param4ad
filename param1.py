@@ -904,7 +904,7 @@ class AutoPilot:
                 self._status.update({"mode": self.mode, "d_front": self.d_front,
                                      "steer": steer, "left": ls, "right": rs,
                                      "tgt_deg": tgt_deg, "dmin": dmin,
-                                     "gap_width": None, "ts": now})
+                                     "gap_width": None, "ts": time.time()})
             return (ls, rs)
 
         tgt_deg, tgt_dist = self._fgm_pick_target(ranges2, angles, gap)
@@ -979,7 +979,7 @@ class AutoPilot:
             self._status.update({"mode": self.mode, "d_front": self.d_front,
                                  "steer": steer, "left": ls, "right": rs,
                                  "tgt_deg": tgt_deg, "dmin": dmin,
-                                 "gap_width": gap_w, "ts": now})
+                                 "gap_width": gap_w, "ts": time.time()})
         return (ls, rs)
 
     def loop(self):

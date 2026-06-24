@@ -40,6 +40,18 @@ export type Params = {
 
 export type Command = "RUN" | "PAUSE" | "QUIT"
 
+export type RaspiStatus = {
+  mode: "RUN" | "PAUSE"
+  d_front: number | null
+  steer: number
+  left: number
+  right: number
+  tgt_deg: number
+  dmin: number | null
+  gap_width: number | null
+  ts: number
+}
+
 type ParamSchema = {
   type: "boolean" | "number" | "string"
   min?: number
