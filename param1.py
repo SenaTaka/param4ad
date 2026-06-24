@@ -290,9 +290,7 @@ def poll_command(ap, url: str) -> None:
     _last_params_raw = b""   # 前回取得したパラメータ JSON (変化検出用)
     _ok_count        = 0
     _err_count       = 0
-    _tick            = 0     # 経過秒カウンタ
-    _pending_cmd     = None  # デバウンス用: 前回取得コマンド
-    _pending_count   = 0     # デバウンス用: 連続一致回数
+    _tick            = 0     # 経過カウンタ
 
     while True:
         with ap.lock:
@@ -318,14 +316,6 @@ def poll_command(ap, url: str) -> None:
                 armed = ap.armed
                 mode  = ap.mode
 
-            # ---- デバウンス（非対称）----
-            # RUN: 2回連続で適用 / PAUSE: 5回連続で適用 / QUIT: 即時
-            if cmd == _pending_cmd:
-                _pending_count += 1
-            else:
-                _pending_cmd = cmd
-                _pending_count = 1
-
             if cmd != _last_cmd:
                 state = "受付中" if armed else "g キーで受付開始"
                 ap.dbg.log(f"[API] コマンド変化: {_last_cmd} → {cmd}  [{state}]")
@@ -340,10 +330,9 @@ def poll_command(ap, url: str) -> None:
                 break
             elif not armed:
                 pass
-            elif cmd == "RUN" and _pending_count >= 2 and mode != "RUN":
-                # Redis導入済みのため不整合リスク低。2回確認で即適用
+            elif cmd == "RUN" and mode != "RUN":
                 ap.set_mode("RUN")
-            elif cmd == "PAUSE" and _pending_count >= 2 and mode != "PAUSE":
+            elif cmd == "PAUSE" and mode != "PAUSE":
                 ap.set_mode("PAUSE")
 
         except urllib.error.URLError as e:
@@ -372,6 +361,8 @@ def poll_command(ap, url: str) -> None:
                     changed = _apply_params_from_dict(json.loads(body))
                     if changed:
                         _print_applied_params("パラメータ更新", ap.dbg)
+                        with ap._status_lock:
+                            ap._status["param_updated_at"] = time.time()
 
             except Exception as e:
                 ap.dbg.log(f"[PARAM] 取得エラー: {type(e).__name__}: {e}")
@@ -711,6 +702,7 @@ class AutoPilot:
             "mode": "PAUSE", "d_front": None, "steer": 0.0,
             "left": 0.0, "right": 0.0, "tgt_deg": 0.0,
             "dmin": None, "gap_width": None, "ts": 0.0,
+            "param_updated_at": None,
         }
         self._status_lock = threading.Lock()
 

@@ -51,6 +51,7 @@ export type RaspiStatus = {
   dmin: number | null
   gap_width: number | null
   ts: number
+  param_updated_at: number | null
 }
 
 type ParamSchema = {

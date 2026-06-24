@@ -282,6 +282,14 @@ function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
               <p className="text-sm font-mono text-gray-300">{status!.gap_width.toFixed(1)}°</p>
             </div>
           )}
+          {status!.param_updated_at !== null && (
+            <div className="col-span-2 border-t border-[#1a3048] pt-2 mt-1">
+              <span className="text-[10px] text-gray-500 font-mono">最終パラメータ適用</span>
+              <p className="text-xs font-mono text-cyan-400/70">
+                {new Date(status!.param_updated_at * 1000).toLocaleTimeString("ja-JP")}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </section>
