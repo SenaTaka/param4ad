@@ -42,6 +42,7 @@ export type Command = "RUN" | "PAUSE" | "QUIT"
 
 export type RaspiStatus = {
   mode: "RUN" | "PAUSE"
+  armed: boolean
   d_front: number | null
   steer: number
   left: number

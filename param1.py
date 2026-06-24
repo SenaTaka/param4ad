@@ -264,6 +264,8 @@ def _post_status_async(ap, status_endpoint: str) -> None:
             data = dict(ap._status)
         with ap.lock:
             data["mode"] = ap.mode
+            data["armed"] = ap.armed
+        data["ts"] = time.time()  # 送信時刻で常に上書き（PAUSE中も接続表示を維持）
         try:
             body = json.dumps(data).encode()
             req = urllib.request.Request(

@@ -242,6 +242,12 @@ function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
             <span className="text-[10px] text-gray-500 font-mono">モード</span>
             <p className={`text-sm font-bold font-mono ${status!.mode === "RUN" ? "text-green-400" : "text-yellow-400"}`}>
               {status!.mode}
+              {status!.mode === "PAUSE" && !status!.armed && (
+                <span className="text-[10px] text-gray-500 font-normal ml-1">（g キーで受付開始）</span>
+              )}
+              {status!.armed && status!.mode === "PAUSE" && (
+                <span className="text-[10px] text-cyan-400 font-normal ml-1">受付中</span>
+              )}
             </p>
           </div>
           <div>
