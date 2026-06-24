@@ -217,10 +217,18 @@ function SteerBar({ value }: { value: number }) {
   )
 }
 
-function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
+function RaspiStatusPanel({ status, invertMotor, invertSteer }: {
+  status: RaspiStatus | null
+  invertMotor: boolean
+  invertSteer: boolean
+}) {
   const now = Date.now() / 1000
   const age = status ? now - status.ts : Infinity
   const connected = age < 10
+
+  const dispLeft  = invertMotor ? status?.right : status?.left
+  const dispRight = invertMotor ? status?.left  : status?.right
+  const dispSteer = invertSteer ? -(status?.steer ?? 0) : (status?.steer ?? 0)
 
   return (
     <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4">
@@ -257,18 +265,18 @@ function RaspiStatusPanel({ status }: { status: RaspiStatus | null }) {
             </p>
           </div>
           <div>
-            <span className="text-[10px] text-gray-500 font-mono">左モーター</span>
-            <p className="text-sm font-bold font-mono text-cyan-300">{status!.left.toFixed(2)}</p>
+            <span className="text-[10px] text-gray-500 font-mono">左モーター{invertMotor ? " ⇄" : ""}</span>
+            <p className="text-sm font-bold font-mono text-cyan-300">{dispLeft!.toFixed(2)}</p>
           </div>
           <div>
-            <span className="text-[10px] text-gray-500 font-mono">右モーター</span>
-            <p className="text-sm font-bold font-mono text-cyan-300">{status!.right.toFixed(2)}</p>
+            <span className="text-[10px] text-gray-500 font-mono">右モーター{invertMotor ? " ⇄" : ""}</span>
+            <p className="text-sm font-bold font-mono text-cyan-300">{dispRight!.toFixed(2)}</p>
           </div>
           <div className="col-span-2">
             <span className="text-[10px] text-gray-500 font-mono block mb-1">
-              ステア {status!.steer >= 0 ? "←" : "→"} {Math.abs(status!.steer).toFixed(2)}
+              ステア{invertSteer ? " ⇄" : ""} {dispSteer >= 0 ? "←" : "→"} {Math.abs(dispSteer).toFixed(2)}
             </span>
-            <SteerBar value={status!.steer} />
+            <SteerBar value={dispSteer} />
           </div>
           {status!.dmin !== null && (
             <div>
@@ -305,6 +313,25 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const [raspiStatus, setRaspiStatus] = useState<RaspiStatus | null>(null)
+  const [invertMotor, setInvertMotor] = useState(false)
+  const [invertSteer, setInvertSteer] = useState(false)
+
+  const DISPLAY_TAB = GROUPS.length
+
+  // 表示設定をlocalStorageから復元
+  useEffect(() => {
+    setInvertMotor(localStorage.getItem("invertMotor") === "true")
+    setInvertSteer(localStorage.getItem("invertSteer") === "true")
+  }, [])
+
+  const handleInvertMotor = (v: boolean) => {
+    setInvertMotor(v)
+    localStorage.setItem("invertMotor", String(v))
+  }
+  const handleInvertSteer = (v: boolean) => {
+    setInvertSteer(v)
+    localStorage.setItem("invertSteer", String(v))
+  }
 
   // Load initial state
   // 初回ロード
@@ -436,7 +463,7 @@ export default function Home() {
       </section>
 
       {/* Raspi Status */}
-      <RaspiStatusPanel status={raspiStatus} />
+      <RaspiStatusPanel status={raspiStatus} invertMotor={invertMotor} invertSteer={invertSteer} />
 
       {/* Params */}
       <section className="bg-[#0b1828] border border-[#1a3048] rounded-xl overflow-hidden">
@@ -455,44 +482,87 @@ export default function Home() {
               {g.title}
             </button>
           ))}
+          <button
+            onClick={() => setActiveTab(DISPLAY_TAB)}
+            className={`px-4 py-4 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] ${
+              activeTab === DISPLAY_TAB
+                ? "text-cyan-400 border-b-2 border-cyan-400 -mb-px"
+                : "text-gray-500 hover:text-gray-200"
+            }`}
+          >
+            表示設定
+          </button>
         </div>
 
         {/* Fields */}
-        <div className="p-4">
-          {group.fields.map(field => {
-            if (field.type === "slider") {
-              return (
-                <Slider
-                  key={field.key}
-                  field={field}
-                  value={params[field.key] as number}
-                  onChange={v => updateParam(field.key, v)}
-                />
-              )
-            }
-            if (field.type === "toggle") {
-              return (
-                <Toggle
-                  key={field.key}
-                  field={field}
-                  value={params[field.key] as boolean}
-                  onChange={v => updateParam(field.key, v)}
-                />
-              )
-            }
-            if (field.type === "select") {
-              return (
-                <SelectInput
-                  key={field.key}
-                  field={field}
-                  value={params[field.key] as string}
-                  onChange={v => updateParam(field.key, v)}
-                />
-              )
-            }
-            return null
-          })}
-        </div>
+        {activeTab === DISPLAY_TAB ? (
+          <div className="p-4">
+            <div className="py-4 border-b border-[#1a3048] flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-gray-200">モーター左右を逆表示</span>
+                <p className="text-xs text-gray-500 mt-0.5 leading-snug">左右モーターの表示を入れ替える。配線が逆のときに使う</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={invertMotor}
+                onClick={() => handleInvertMotor(!invertMotor)}
+                className={`relative shrink-0 w-14 h-8 rounded-full transition-colors duration-200 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1828] ${invertMotor ? "bg-cyan-600" : "bg-[#1a3048]"}`}
+              >
+                <span className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${invertMotor ? "translate-x-6" : "translate-x-0"}`} />
+              </button>
+            </div>
+            <div className="py-4 flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-gray-200">ステアを逆表示</span>
+                <p className="text-xs text-gray-500 mt-0.5 leading-snug">ステアバーの左右方向を反転する。センサーやロジックが逆向きのときに使う</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={invertSteer}
+                onClick={() => handleInvertSteer(!invertSteer)}
+                className={`relative shrink-0 w-14 h-8 rounded-full transition-colors duration-200 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1828] ${invertSteer ? "bg-cyan-600" : "bg-[#1a3048]"}`}
+              >
+                <span className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${invertSteer ? "translate-x-6" : "translate-x-0"}`} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4">
+            {group.fields.map(field => {
+              if (field.type === "slider") {
+                return (
+                  <Slider
+                    key={field.key}
+                    field={field}
+                    value={params[field.key] as number}
+                    onChange={v => updateParam(field.key, v)}
+                  />
+                )
+              }
+              if (field.type === "toggle") {
+                return (
+                  <Toggle
+                    key={field.key}
+                    field={field}
+                    value={params[field.key] as boolean}
+                    onChange={v => updateParam(field.key, v)}
+                  />
+                )
+              }
+              if (field.type === "select") {
+                return (
+                  <SelectInput
+                    key={field.key}
+                    field={field}
+                    value={params[field.key] as string}
+                    onChange={v => updateParam(field.key, v)}
+                  />
+                )
+              }
+              return null
+            })}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="border-t border-[#1a3048] bg-[#04090f]/50">
