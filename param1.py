@@ -291,6 +291,8 @@ def poll_command(ap, url: str) -> None:
     _ok_count        = 0
     _err_count       = 0
     _tick            = 0     # 経過秒カウンタ
+    _pending_cmd     = None  # デバウンス用: 前回取得コマンド
+    _pending_count   = 0     # デバウンス用: 連続一致回数
 
     while True:
         with ap.lock:
@@ -316,9 +318,16 @@ def poll_command(ap, url: str) -> None:
                 armed = ap.armed
                 mode  = ap.mode
 
+            # ---- デバウンス: 2回連続で同じコマンドが来たら適用 ----
+            if cmd == _pending_cmd:
+                _pending_count += 1
+            else:
+                _pending_cmd = cmd
+                _pending_count = 1
+
             if cmd != _last_cmd:
                 state = "受付中" if armed else "待機中(g で受付開始)"
-                print(f"[API] command: {_last_cmd} → {cmd}  [{state}]", flush=True)
+                print(f"[API] command: {_last_cmd} → {cmd} (count={_pending_count}) [{state}]", flush=True)
                 _last_cmd = cmd
 
             if _ok_count % 10 == 0:
@@ -326,8 +335,8 @@ def poll_command(ap, url: str) -> None:
                 print(f"[API] alive  cmd={cmd}  mode={mode}  armed={armed}  [{state}]",
                       flush=True)
 
-            if not armed:
-                pass
+            if not armed or _pending_count < 2:
+                pass  # armed でない or まだ1回しか確認していない → 適用しない
             elif cmd == "RUN":
                 ap.set_mode("RUN")
             elif cmd == "PAUSE":
@@ -710,8 +719,9 @@ class AutoPilot:
 
     def set_mode(self, mode):
         with self.lock:
-            if self.mode != mode:
-                self.dbg.event(f"mode {self.mode} -> {mode}")
+            if self.mode == mode:
+                return  # 同じモードなら何もしない（motor.stop()の無駄な連呼を防ぐ）
+            self.dbg.event(f"mode {self.mode} -> {mode}")
             self.mode = mode
             if mode == "PAUSE":
                 self.motor.stop()

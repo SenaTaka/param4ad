@@ -306,16 +306,8 @@ export default function Home() {
       .catch(() => {})
   }, [])
 
-  // Poll command every 2s
-  useEffect(() => {
-    const id = setInterval(() => {
-      fetch("/api/command")
-        .then(r => r.json())
-        .then(d => setCommand(d.command))
-        .catch(() => {})
-    }, 2000)
-    return () => clearInterval(id)
-  }, [])
+  // コマンドはユーザー操作のみで更新（サーバーポーリング廃止）
+  // → マルチインスタンス不整合でUIが逆転するのを防ぐ
 
   // Poll raspi status every 2s
   useEffect(() => {
