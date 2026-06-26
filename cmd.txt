@@ -3,3 +3,22 @@
 
 
     sudo PARAM_SERVER_URL=https://param4ad.vercel.app python3 ~/car/vivi/param1.py
+
+      sudo PARAM_SERVER_URL=https://param4ad.vercel.app python3 ~/car/vivi/param.py
+
+
+
+    sudo PARAM_SERVER_URL=https://param4ad.vercel.app python3 ~/car/vivi/param1.py
+
+    # donut
+    sudo python3 ~/car/tm1.py
+    
+    # リニア
+     sudo python3 ~/car/t_M2.py
+
+
+     sudo PARAM_SERVER_URL=https://param4ad.vercel.app \
+     ROBOT_ID=A \
+     ROBOT_NAME=チームA \
+     python3 ~/car/vivi/param1.py
+     

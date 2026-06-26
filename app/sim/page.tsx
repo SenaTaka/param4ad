@@ -68,8 +68,12 @@ const FINISH_A = { x: 1.0, y: 6.2 }
 const FINISH_B = { x: 1.0, y: 7.4 }
 const TEAM_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#facc15"]
 
+// 12Hz: matches real LiDAR scan rate constraint in param1.py
+const CTRL_HZ = 12
+const CTRL_DT_MS = 1000 / CTRL_HZ
+
 // ── Params → SimParams ────────────────────────────────────────────────────────
-function paramsToSim(p: Params): SimParams {
+function paramsToSim(p: Params, prev?: SimParams): SimParams {
   return {
     fovDeg:         p.FGM_FOV_DEG,
     binDeg:         p.FGM_BIN_DEG,
@@ -83,6 +87,7 @@ function paramsToSim(p: Params): SimParams {
     kp:             p.KP_GAP_ANGLE,
     maxSteer:       p.MAX_STEER,
     baseSpeed:      p.BASE_SPEED,
+    speedMin:       p.SPEED_MIN,
     speedMax:       p.SPEED_MAX,
     turnSpeed:      p.TURN_SPEED,
     speedSteerDrop: p.SPEED_STEER_DROP,
@@ -93,6 +98,12 @@ function paramsToSim(p: Params): SimParams {
     pivotSteerTh:   p.PIVOT_STEER_TH,
     pivotSoftTh:    p.PIVOT_SOFT_TH,
     pivotMinSpeed:  p.PIVOT_MIN_SPEED,
+    emaAlpha:       p.EMA_ALPHA,
+    frontWindowDeg: p.FRONT_WINDOW_DEG,
+    speedCmdScale:  p.SPEED_CMD_SCALE,
+    // sim-only: preserve from previous state if provided
+    slipEnable:     prev?.slipEnable ?? false,
+    slipK:          prev?.slipK ?? 0.3,
   }
 }
 
@@ -109,9 +120,15 @@ type RaceRobot = {
   trail: { x: number; y: number }[]
   lap: number
   lapTimes: number[]
+  bestLap: number
+  totalTime: number
   lastCrossAt: number
   crossedOnce: boolean
   finished: boolean
+  // 12Hz control state
+  lastCtrl: number
+  lastCmd: { ls: number; rs: number }
+  frontDist: number  // EMA state
 }
 
 function fmtTime(sec: number): string {
@@ -288,12 +305,17 @@ export default function SimPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Normal sim refs
-  const robotRef   = useRef<RobotState>({ ...INIT_ROBOT })
-  const paramsRef  = useRef<SimParams>({ ...DEFAULT_SIM_PARAMS })
-  const resultRef  = useRef<FTGResult | null>(null)
-  const trailRef   = useRef<{ x: number; y: number }[]>([])
-  const runningRef = useRef(false)
-  const layersRef  = useRef({ rays: true, bubble: true, gap: true })
+  const robotRef    = useRef<RobotState>({ ...INIT_ROBOT })
+  const paramsRef   = useRef<SimParams>({ ...DEFAULT_SIM_PARAMS })
+  const resultRef   = useRef<FTGResult | null>(null)
+  const trailRef    = useRef<{ x: number; y: number }[]>([])
+  const runningRef  = useRef(false)
+  const layersRef   = useRef({ rays: true, bubble: true, gap: true })
+
+  // 12Hz control state
+  const lastCtrlRef = useRef<number>(0)
+  const lastCmdRef  = useRef<{ ls: number; rs: number }>({ ls: 0, rs: 0 })
+  const frontDistRef = useRef<number>(12.0)  // EMA state for d_front
 
   const [running, setRunning] = useState(false)
   const [layers,  setLayers]  = useState({ rays: true, bubble: true, gap: true })
@@ -313,31 +335,21 @@ export default function SimPage() {
   const [countdown,       setCountdown]       = useState(0)
   const [raceDisplay,     setRaceDisplay]     = useState<RaceRobot[]>([])
 
-  useEffect(() => { paramsRef.current  = params },    [params])
-  useEffect(() => { runningRef.current = running },   [running])
-  useEffect(() => { layersRef.current  = layers },    [layers])
-  useEffect(() => { raceModeRef.current = racePhase },[racePhase])
+  useEffect(() => { paramsRef.current  = params },     [params])
+  useEffect(() => { runningRef.current = running },    [running])
+  useEffect(() => { layersRef.current  = layers },     [layers])
+  useEffect(() => { raceModeRef.current = racePhase }, [racePhase])
   useEffect(() => { totalLapsRef.current = totalLaps },[totalLaps])
   useEffect(() => { countdownRef.current = countdown },[countdown])
 
-  // fetch default params on mount
+  // Load all server params on mount
   useEffect(() => {
-    fetch("/api/params").then(r => r.json()).then((d: Record<string, unknown>) => {
-      setParams(prev => ({
-        ...prev,
-        fovDeg:       typeof d.FGM_FOV_DEG === "number"       ? d.FGM_FOV_DEG       : prev.fovDeg,
-        clearTh:      typeof d.FGM_CLEAR_TH === "number"      ? d.FGM_CLEAR_TH      : prev.clearTh,
-        bubbleRadius: typeof d.FGM_BUBBLE_RADIUS === "number" ? d.FGM_BUBBLE_RADIUS  : prev.bubbleRadius,
-        kp:           typeof d.KP_GAP_ANGLE === "number"      ? d.KP_GAP_ANGLE       : prev.kp,
-        maxSteer:     typeof d.MAX_STEER === "number"         ? d.MAX_STEER          : prev.maxSteer,
-        baseSpeed:    typeof d.BASE_SPEED === "number"        ? d.BASE_SPEED         : prev.baseSpeed,
-        speedMax:     typeof d.SPEED_MAX === "number"         ? d.SPEED_MAX          : prev.speedMax,
-        turnSpeed:    typeof d.TURN_SPEED === "number"        ? d.TURN_SPEED         : prev.turnSpeed,
-      }))
+    fetch("/api/params").then(r => r.json()).then((d: Params) => {
+      setParams(prev => paramsToSim(d, prev))
     }).catch(() => {})
   }, [])
 
-  // Unified animation loop (single RAF, no dependency on React state)
+  // Unified animation loop
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -355,9 +367,22 @@ export default function SimPage() {
         for (const robot of raceRef.current) {
           if (robot.finished) continue
           anyActive = true
-          const ctrl = ftgControl(robot.state, WALLS, robot.simParams)
+
+          // 12Hz control: only call ftgControl when a new "scan" would arrive
+          if ((now - robot.lastCtrl) >= CTRL_DT_MS) {
+            const ctrl = ftgControl(robot.state, WALLS, robot.simParams, robot.frontDist)
+            robot.lastCmd = { ls: ctrl.ls, rs: ctrl.rs }
+            robot.frontDist = ctrl.frontDist
+            robot.lastCtrl = now
+          }
+
           robot.prevState = { ...robot.state }
-          robot.state = stepRobot(robot.state, ctrl.ls, ctrl.rs, dt)
+          robot.state = stepRobot(
+            robot.state,
+            robot.lastCmd.ls, robot.lastCmd.rs,
+            dt,
+            robot.simParams.slipEnable, robot.simParams.slipK
+          )
           robot.trail.push({ x: robot.state.x, y: robot.state.y })
           if (robot.trail.length > 800) robot.trail.shift()
 
@@ -366,7 +391,10 @@ export default function SimPage() {
               robot.crossedOnce = true
               robot.lastCrossAt = Date.now()
             } else {
-              robot.lapTimes.push((Date.now() - robot.lastCrossAt) / 1000)
+              const lapTime = (Date.now() - robot.lastCrossAt) / 1000
+              robot.lapTimes.push(lapTime)
+              robot.totalTime += lapTime
+              if (lapTime < robot.bestLap) robot.bestLap = lapTime
               robot.lap++
               robot.lastCrossAt = Date.now()
               if (robot.lap >= totalLapsRef.current) robot.finished = true
@@ -383,12 +411,24 @@ export default function SimPage() {
         drawRaceFrame(ctx, raceRef.current, countdownRef.current)
       } else {
         if (runningRef.current) {
-          const res = ftgControl(robotRef.current, WALLS, paramsRef.current)
-          robotRef.current = stepRobot(robotRef.current, res.ls, res.rs, dt)
-          resultRef.current = res
+          // 12Hz control: only update FTG when a new LiDAR scan would arrive
+          if ((now - lastCtrlRef.current) >= CTRL_DT_MS) {
+            const res = ftgControl(robotRef.current, WALLS, paramsRef.current, frontDistRef.current)
+            lastCmdRef.current = { ls: res.ls, rs: res.rs }
+            frontDistRef.current = res.frontDist
+            lastCtrlRef.current = now
+            resultRef.current = res
+            setStats({ steer: res.steer, ls: res.ls, rs: res.rs, front: res.frontDist })
+          }
+
+          // Physics runs every frame (high-rate integration)
+          const { ls, rs } = lastCmdRef.current
+          robotRef.current = stepRobot(
+            robotRef.current, ls, rs, dt,
+            paramsRef.current.slipEnable, paramsRef.current.slipK
+          )
           trailRef.current.push({ x: robotRef.current.x, y: robotRef.current.y })
           if (trailRef.current.length > 800) trailRef.current.shift()
-          setStats({ steer: res.steer, ls: res.ls, rs: res.rs, front: res.frontDist })
         }
         drawFrame(ctx, robotRef.current, resultRef.current, trailRef.current, layersRef.current)
       }
@@ -421,6 +461,9 @@ export default function SimPage() {
     robotRef.current = { ...INIT_ROBOT }
     resultRef.current = null
     trailRef.current = []
+    frontDistRef.current = 12.0
+    lastCtrlRef.current = 0
+    lastCmdRef.current = { ls: 0, rs: 0 }
     setRunning(false)
   }, [])
 
@@ -465,9 +508,14 @@ export default function SimPage() {
         trail: [],
         lap: 0,
         lapTimes: [],
+        bestLap: Infinity,
+        totalTime: 0,
         lastCrossAt: Date.now(),
         crossedOnce: false,
         finished: false,
+        lastCtrl: 0,
+        lastCmd: { ls: 0, rs: 0 },
+        frontDist: 12.0,
       }
     })
     raceRef.current = robots
@@ -516,7 +564,7 @@ export default function SimPage() {
           <h1 className="text-xl font-bold text-cyan-400 tracking-tight">
             <span className="font-mono mr-1 opacity-60">&gt;</span>FTG シミュレータ
           </h1>
-          <p className="text-xs text-gray-500 font-mono">シケイン + Sカーブ コース — トップダウン2D</p>
+          <p className="text-xs text-gray-500 font-mono">シケイン + Sカーブ コース — 12Hz制御 / param1.py 再現</p>
         </div>
 
         {/* canvas */}
@@ -560,7 +608,8 @@ export default function SimPage() {
               ))}
             </div>
 
-            <div className="ml-auto font-mono text-xs text-gray-400 flex gap-3">
+            <div className="ml-auto font-mono text-xs text-gray-400 flex gap-3 flex-wrap">
+              <span className="text-gray-600">12Hz</span>
               <span>steer <span className="text-white">{stats.steer.toFixed(2)}</span></span>
               <span>L <span className="text-white">{stats.ls.toFixed(2)}</span></span>
               <span>R <span className="text-white">{stats.rs.toFixed(2)}</span></span>
@@ -680,6 +729,9 @@ export default function SimPage() {
                       ? fmtTime(robot.lapTimes[robot.lapTimes.length - 1])
                       : "—"}
                   </span>
+                  <span className="text-xs font-mono text-yellow-400 w-16 text-right shrink-0">
+                    {robot.bestLap < Infinity ? `B:${fmtTime(robot.bestLap)}` : ""}
+                  </span>
                   {robot.finished && (
                     <span className="text-[10px] text-green-400 font-mono shrink-0">DONE</span>
                   )}
@@ -688,17 +740,24 @@ export default function SimPage() {
             </div>
 
             {racePhase === "finished" && (
-              <div className="mt-4 pt-3 border-t border-[#1a3048] space-y-1">
+              <div className="mt-4 pt-3 border-t border-[#1a3048] space-y-2">
                 <p className="text-xs text-gray-500 font-mono mb-2">全ラップタイム</p>
                 {leaderboard.map(robot => (
-                  <div key={robot.robotId} className="text-xs font-mono text-gray-400">
-                    <span style={{ color: robot.color }}>{robot.name}</span>
-                    {": "}
-                    {robot.lapTimes.length > 0
-                      ? robot.lapTimes.map((t, i) => (
-                          <span key={i}>{fmtTime(t)}{i < robot.lapTimes.length - 1 ? " / " : ""}</span>
-                        ))
-                      : "—"}
+                  <div key={robot.robotId} className="text-xs font-mono">
+                    <span style={{ color: robot.color }} className="font-semibold">{robot.name}</span>
+                    <span className="text-gray-500 ml-2">
+                      {robot.lapTimes.length > 0
+                        ? robot.lapTimes.map((t, i) => (
+                            <span key={i}>{fmtTime(t)}{i < robot.lapTimes.length - 1 ? " / " : ""}</span>
+                          ))
+                        : "—"}
+                    </span>
+                    {robot.bestLap < Infinity && (
+                      <span className="text-yellow-400 ml-3">Best: {fmtTime(robot.bestLap)}</span>
+                    )}
+                    {robot.totalTime > 0 && (
+                      <span className="text-gray-400 ml-3">Total: {fmtTime(robot.totalTime)}</span>
+                    )}
                   </div>
                 ))}
                 <button
@@ -718,16 +777,37 @@ export default function SimPage() {
 
         {/* sliders — hidden in race mode */}
         {!isRaceActive && (
-          <div className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
-            <Slider label="視野角 FOV (°)" k="fovDeg" min={60} max={180} step={5} />
-            <Slider label="障害物閾値 CLEAR_TH (m)" k="clearTh" min={0.3} max={3} step={0.05} />
-            <Slider label="バブル半径 (m)" k="bubbleRadius" min={0.05} max={0.6} step={0.01} />
-            <Slider label="ゲイン KP" k="kp" min={0.1} max={2} step={0.05} />
-            <Slider label="基本速度" k="baseSpeed" min={0.1} max={1} step={0.05} />
-            <Slider label="最大速度" k="speedMax" min={0.1} max={1} step={0.05} />
-            <Slider label="旋回速度" k="turnSpeed" min={0.05} max={0.8} step={0.05} />
-            <Slider label="ステア減速" k="speedSteerDrop" min={0} max={1} step={0.05} />
-            <Slider label="前方減速" k="speedFrontDrop" min={0} max={1} step={0.05} />
+          <div className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+              <Slider label="視野角 FOV (°)" k="fovDeg" min={60} max={180} step={5} />
+              <Slider label="障害物閾値 CLEAR_TH (m)" k="clearTh" min={0.3} max={3} step={0.05} />
+              <Slider label="バブル半径 (m)" k="bubbleRadius" min={0.05} max={0.6} step={0.01} />
+              <Slider label="ゲイン KP" k="kp" min={0.1} max={2} step={0.05} />
+              <Slider label="基本速度" k="baseSpeed" min={0.1} max={1} step={0.05} />
+              <Slider label="最大速度" k="speedMax" min={0.1} max={1} step={0.05} />
+              <Slider label="旋回速度" k="turnSpeed" min={0.05} max={0.8} step={0.05} />
+              <Slider label="ステア減速" k="speedSteerDrop" min={0} max={1} step={0.05} />
+              <Slider label="前方減速" k="speedFrontDrop" min={0} max={1} step={0.05} />
+            </div>
+
+            {/* Slip model */}
+            <div className="border-t border-[#1a3048] pt-3 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer select-none min-h-[36px]">
+                <input
+                  type="checkbox"
+                  checked={params.slipEnable}
+                  onChange={e => setParams(prev => ({ ...prev, slipEnable: e.target.checked }))}
+                  className="accent-orange-400 w-4 h-4"
+                />
+                <span className="text-sm text-gray-300">タイヤスリップ</span>
+                <span className="text-xs text-gray-500 font-mono">(実機にはない追加モデル)</span>
+              </label>
+              {params.slipEnable && (
+                <div className="flex-1 min-w-[160px]">
+                  <Slider label="スリップ係数" k="slipK" min={0} max={1} step={0.05} />
+                </div>
+              )}
+            </div>
           </div>
         )}
 

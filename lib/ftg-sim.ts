@@ -1,4 +1,5 @@
 // FTG simulator — pure logic, no DOM
+// Faithfully reproduces param1.py logic
 
 export type Vec2 = { x: number; y: number }
 export type Wall = [Vec2, Vec2]
@@ -10,28 +11,41 @@ export interface RobotState {
 }
 
 export interface SimParams {
+  // FTG core
   fovDeg: number
   binDeg: number
   smoothWin: number
   clearTh: number
   minGapDeg: number
   target: "FAR" | "MID"
+  // Bubble
   bubbleRadius: number
   bubbleMinDeg: number
   bubbleMaxDeg: number
+  // Steering
   kp: number
   maxSteer: number
+  // Speed
   baseSpeed: number
+  speedMin: number
   speedMax: number
   turnSpeed: number
   speedSteerDrop: number
   speedFrontDrop: number
   frontSlow: number
   frontStop: number
+  // Pivot
   pivotEnable: boolean
   pivotSteerTh: number
   pivotSoftTh: number
   pivotMinSpeed: number
+  // Hardware (reproduced from param1.py)
+  emaAlpha: number       // EMA_ALPHA: smooths d_front across scans
+  frontWindowDeg: number // FRONT_WINDOW_DEG: angular window for front dist
+  speedCmdScale: number  // SPEED_CMD_SCALE: applied at motor driver level
+  // Sim-only
+  slipEnable: boolean    // tire slip (not in param1.py, adds realism)
+  slipK: number
 }
 
 export interface FTGResult {
@@ -45,40 +59,46 @@ export interface FTGResult {
   tgtDeg: number | null
   dmin: number | null
   amin: number | null
-  frontDist: number
+  frontDist: number  // EMA'd value — pass back as prevFrontDist next call
 }
 
 export const DEFAULT_SIM_PARAMS: SimParams = {
-  fovDeg: 120,
-  binDeg: 2,
-  smoothWin: 9,
-  clearTh: 1.4,
-  minGapDeg: 4,
-  target: "FAR",
-  bubbleRadius: 0.27,
-  bubbleMinDeg: 4,
-  bubbleMaxDeg: 25,
-  kp: 0.9,
-  maxSteer: 0.85,
-  baseSpeed: 0.5,
-  speedMax: 0.5,
-  turnSpeed: 0.475,
-  speedSteerDrop: 0.1,
-  speedFrontDrop: 0.4,
-  frontSlow: 0.73,
-  frontStop: 0.38,
-  pivotEnable: true,
-  pivotSteerTh: 0.98,
-  pivotSoftTh: 0.90,
-  pivotMinSpeed: 0.0,
+  fovDeg:         90,     // FGM_FOV_DEG
+  binDeg:         2,      // FGM_BIN_DEG
+  smoothWin:      9,      // FGM_SMOOTH_WIN
+  clearTh:        1.4,    // FGM_CLEAR_TH
+  minGapDeg:      4,      // FGM_MIN_GAP_DEG
+  target:         "FAR",  // FGM_TARGET
+  bubbleRadius:   0.27,   // FGM_BUBBLE_RADIUS
+  bubbleMinDeg:   4,      // FGM_BUBBLE_MIN_DEG
+  bubbleMaxDeg:   25,     // FGM_BUBBLE_MAX_DEG
+  kp:             0.9,    // KP_GAP_ANGLE
+  maxSteer:       0.85,   // MAX_STEER
+  baseSpeed:      0.5,    // BASE_SPEED
+  speedMin:       0.0,    // SPEED_MIN
+  speedMax:       0.5,    // SPEED_MAX
+  turnSpeed:      0.475,  // TURN_SPEED (0.95*0.5)
+  speedSteerDrop: 0.1,    // SPEED_STEER_DROP
+  speedFrontDrop: 0.4,    // SPEED_FRONT_DROP
+  frontSlow:      0.73,   // FRONT_SLOW (0.55+LIDAR_DX)
+  frontStop:      0.38,   // FRONT_STOP (0.2+LIDAR_DX)
+  pivotEnable:    true,   // PIVOT_ENABLE
+  pivotSteerTh:   0.98,   // PIVOT_STEER_TH
+  pivotSoftTh:    0.90,   // PIVOT_SOFT_TH
+  pivotMinSpeed:  0.0,    // PIVOT_MIN_SPEED
+  emaAlpha:       0.45,   // EMA_ALPHA
+  frontWindowDeg: 4,      // FRONT_WINDOW_DEG
+  speedCmdScale:  1.1,    // SPEED_CMD_SCALE
+  slipEnable:     false,
+  slipK:          0.3,
 }
 
 const MAX_VALID = 12.0
-const WHEEL_BASE = 0.18   // m
+const WHEEL_BASE = 0.18   // m (LIDAR_DX used as proxy for wheelbase)
 const REAL_SPEED = 1.5    // m/s at speed=1.0
 
 function clamp(x: number, lo: number, hi: number) {
-  return x < lo ? lo : x > hi ? x : x
+  return x < lo ? lo : x > hi ? hi : x
 }
 
 function cross2(a: Vec2, b: Vec2) {
@@ -107,6 +127,7 @@ export function raycast(origin: Vec2, angleRad: number, walls: Wall[], maxRange 
   return best
 }
 
+// Matches _fgm_build_ranges() in param1.py
 export function buildRanges(robot: RobotState, walls: Wall[], p: SimParams) {
   const half = p.fovDeg / 2
   const nbin = Math.round(p.fovDeg / p.binDeg) + 1
@@ -120,13 +141,12 @@ export function buildRanges(robot: RobotState, walls: Wall[], p: SimParams) {
   for (let i = 0; i < nbin; i++) {
     const signedDeg = angles[i]
     // signed deg: +left in robot frame. robot heading: 0=right, CCW positive.
-    // In canvas: y-down, so we negate the angle for world frame
     const worldAngle = robot.heading - (signedDeg * Math.PI) / 180
     const dist = raycast({ x: robot.x, y: robot.y }, worldAngle, walls)
     if (dist < ranges[i]) ranges[i] = dist
   }
 
-  // median smooth
+  // median smooth (matches FGM_SMOOTH_WIN logic in param1.py)
   const w = p.smoothWin
   if (w >= 3 && w % 2 === 1) {
     const k = Math.floor(w / 2)
@@ -143,6 +163,7 @@ export function buildRanges(robot: RobotState, walls: Wall[], p: SimParams) {
   return { ranges, angles }
 }
 
+// Matches _fgm_apply_bubble() in param1.py (single closest point)
 export function applyBubble(ranges: number[], angles: number[], p: SimParams) {
   let dmin: number | null = null
   let amin: number | null = null
@@ -172,11 +193,12 @@ export function applyBubble(ranges: number[], angles: number[], p: SimParams) {
   return { ranges2: out, dmin, amin }
 }
 
+// Matches _fgm_find_max_gap() in param1.py: best = widest gap (bin count)
 export function findMaxGap(ranges2: number[], angles: number[], p: SimParams): [number, number] | null {
   const n = ranges2.length
   const clear = ranges2.map(r => r >= p.clearTh ? 1 : 0)
   let best: [number, number] | null = null
-  let bestScore = 0
+  let bestLen = 0
 
   let i = 0
   while (i < n) {
@@ -184,33 +206,26 @@ export function findMaxGap(ranges2: number[], angles: number[], p: SimParams): [
     let j = i
     while (j < n && clear[j]) j++
     const gapDeg = j > i ? angles[j - 1] - angles[i] : 0
-    if (gapDeg >= p.minGapDeg) {
-      const maxDist = Math.max(...ranges2.slice(i, j))
-      const score = (j - i) * maxDist
-      if (score > bestScore) {
-        bestScore = score
-        best = [i, j - 1]
-      }
+    if (gapDeg >= p.minGapDeg && (j - i) > bestLen) {
+      bestLen = j - i
+      best = [i, j - 1]
     }
     i = j
   }
   return best
 }
 
+// Matches _fgm_pick_target() in param1.py: full range, closest-to-center tiebreak
 export function pickTarget(ranges2: number[], angles: number[], gap: [number, number], p: SimParams) {
   const [i0, i1] = gap
   if (p.target === "MID") {
     const im = Math.floor((i0 + i1) / 2)
     return { deg: angles[im], dist: ranges2[im] }
   }
-  // FAR — inner 80%
-  const margin = Math.max(1, Math.floor((i1 - i0) / 10))
-  const lo = Math.min(i0 + margin, i1)
-  const hi = Math.max(i1 - margin, i0)
   const mid = (i0 + i1) / 2
   let bestD = -1
   let bestI = Math.floor((i0 + i1) / 2)
-  for (let i = lo; i <= hi; i++) {
+  for (let i = i0; i <= i1; i++) {
     const d = ranges2[i]
     if (d > bestD + 1e-9) { bestD = d; bestI = i }
     else if (Math.abs(d - bestD) <= 1e-9 && Math.abs(i - mid) < Math.abs(bestI - mid)) {
@@ -220,6 +235,7 @@ export function pickTarget(ranges2: number[], angles: number[], gap: [number, nu
   return { deg: angles[bestI], dist: ranges2[bestI] }
 }
 
+// Matches mix_with_pivot() in param1.py
 function mixWithPivot(v: number, steer: number, p: SimParams): [number, number] {
   let left = v * (1 - steer)
   let right = v * (1 + steer)
@@ -241,26 +257,40 @@ function mixWithPivot(v: number, steer: number, p: SimParams): [number, number] 
   return [left, right]
 }
 
+// Matches apply_speed_limits() in param1.py: clamp(v, SPEED_MIN, SPEED_MAX)
 function applySpeedLimits(v: number, p: SimParams) {
   if (v <= 0) return 0
-  return clamp(v, 0, p.speedMax)
+  return clamp(v, p.speedMin, p.speedMax)
 }
 
-export function ftgControl(robot: RobotState, walls: Wall[], p: SimParams): FTGResult {
+// Matches MotorDriver.set_drive() scale + clip in param1.py
+function applyMotorScale(v: number, p: SimParams): number {
+  return Math.min(v * p.speedCmdScale, 1.0)
+}
+
+// Matches _fgm_control() in param1.py
+// prevFrontDist: EMA state from previous call (pass frontDist from last FTGResult)
+export function ftgControl(
+  robot: RobotState,
+  walls: Wall[],
+  p: SimParams,
+  prevFrontDist: number = MAX_VALID
+): FTGResult {
   const { ranges, angles } = buildRanges(robot, walls, p)
   const { ranges2, dmin, amin } = applyBubble(ranges, angles, p)
   const gap = findMaxGap(ranges2, angles, p)
 
-  // front distance (center bins)
+  // d_front: pick min from center bins, apply EMA — matches _pick_window_min() + ema()
   const centerI = Math.floor(ranges.length / 2)
-  const hw = Math.max(1, Math.floor(2 / p.binDeg))
-  let frontDist = MAX_VALID
+  const hw = Math.max(1, Math.floor(p.frontWindowDeg / p.binDeg))
+  let frontRaw = MAX_VALID
   for (let i = Math.max(0, centerI - hw); i <= Math.min(ranges.length - 1, centerI + hw); i++) {
-    if (ranges[i] < frontDist) frontDist = ranges[i]
+    if (ranges[i] < frontRaw) frontRaw = ranges[i]
   }
+  const frontDist = p.emaAlpha * frontRaw + (1 - p.emaAlpha) * prevFrontDist
 
   if (!gap) {
-    // fallback: steer to farthest point
+    // NOGAP fallback: steer toward farthest point at TURN_SPEED
     let bestI = 0
     for (let i = 1; i < ranges2.length; i++) {
       if (ranges2[i] > ranges2[bestI]) bestI = i
@@ -271,11 +301,9 @@ export function ftgControl(robot: RobotState, walls: Wall[], p: SimParams): FTGR
     let [left, right] = mixWithPivot(v, steer, p)
     const m = Math.max(left, right)
     if (m > p.speedMax) { left *= p.speedMax / m; right *= p.speedMax / m }
-    return {
-      ls: applySpeedLimits(left, p), rs: applySpeedLimits(right, p),
-      steer, ranges, angles, ranges2, gap: null,
-      tgtDeg, dmin, amin, frontDist,
-    }
+    const ls = applyMotorScale(applySpeedLimits(left, p), p)
+    const rs = applyMotorScale(applySpeedLimits(right, p), p)
+    return { ls, rs, steer, ranges, angles, ranges2, gap: null, tgtDeg, dmin, amin, frontDist }
   }
 
   const { deg: tgtDeg, dist: tgtDist } = pickTarget(ranges2, angles, gap, p)
@@ -287,6 +315,7 @@ export function ftgControl(robot: RobotState, walls: Wall[], p: SimParams): FTGR
     frontDrop = clamp((p.frontSlow - frontEff) / Math.max(p.frontSlow - p.frontStop, 1e-3), 0, 1)
   }
 
+  // Speed: linear steer drop (matches Python — NOT steer^1.5)
   let v = p.baseSpeed
   v *= (1 - p.speedSteerDrop * Math.min(1, Math.abs(steer)))
   v *= (1 - p.speedFrontDrop * frontDrop)
@@ -297,20 +326,39 @@ export function ftgControl(robot: RobotState, walls: Wall[], p: SimParams): FTGR
   const m = Math.max(left, right)
   if (m > p.speedMax) { left *= p.speedMax / m; right *= p.speedMax / m }
 
-  return {
-    ls: applySpeedLimits(left, p), rs: applySpeedLimits(right, p),
-    steer, ranges, angles, ranges2, gap,
-    tgtDeg, dmin, amin, frontDist,
-  }
+  const ls = applyMotorScale(applySpeedLimits(left, p), p)
+  const rs = applyMotorScale(applySpeedLimits(right, p), p)
+
+  return { ls, rs, steer, ranges, angles, ranges2, gap, tgtDeg, dmin, amin, frontDist }
 }
 
-export function stepRobot(robot: RobotState, ls: number, rs: number, dt: number): RobotState {
+// stepRobot: pure kinematics + optional tire slip
+// Slip model: understeer — high omega*v reduces effective turning
+export function stepRobot(
+  robot: RobotState,
+  ls: number, rs: number,
+  dt: number,
+  slipEnable = false,
+  slipK = 0.0
+): RobotState {
   const v = ((ls + rs) / 2) * REAL_SPEED
   const omega = ((rs - ls) / WHEEL_BASE) * REAL_SPEED
+
+  if (!slipEnable || slipK <= 0) {
+    return {
+      x: robot.x + v * Math.cos(robot.heading) * dt,
+      y: robot.y + v * Math.sin(robot.heading) * dt,
+      heading: robot.heading - omega * dt,
+    }
+  }
+
+  // Slip: lateral grip limit → robot turns less than commanded (understeer)
+  const slip = Math.min(0.9, Math.abs(omega) * Math.abs(v) * slipK)
+  const effectiveOmega = omega * (1 - slip)
   return {
     x: robot.x + v * Math.cos(robot.heading) * dt,
     y: robot.y + v * Math.sin(robot.heading) * dt,
-    heading: robot.heading - omega * dt,  // y-down canvas: CCW = heading decreases
+    heading: robot.heading - effectiveOmega * dt,
   }
 }
 
