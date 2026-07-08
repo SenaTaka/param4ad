@@ -52,6 +52,7 @@ export type RaspiStatus = {
   gap_width: number | null
   ts: number
   param_updated_at: number | null
+  ip?: string | null
 }
 
 type ParamSchema = {
