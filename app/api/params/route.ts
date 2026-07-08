@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { storeGet, storeSet } from "@/lib/store"
 import { DEFAULT_PARAMS, validateParams } from "@/lib/defaults"
 import type { Params } from "@/lib/defaults"
+import { key, teamOf, robotOf } from "@/lib/keys"
 
 function robotKey(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("robot") || "default"
-  return `params:${id}`
+  return key("params", teamOf(req), robotOf(req))
 }
 
 export async function GET(req: NextRequest) {

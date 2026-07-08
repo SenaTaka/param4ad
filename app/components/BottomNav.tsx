@@ -42,19 +42,29 @@ const TABS = [
   },
 ]
 
+const VALID_TEAMS = new Set(["a", "b", "c", "d", "e"])
+
 export default function BottomNav() {
   const pathname = usePathname()
+
+  // 現在のチーム（先頭セグメントが a〜e ならそれ、なければ a）
+  const firstSeg = pathname.split("/")[1] ?? ""
+  const currentTeam = VALID_TEAMS.has(firstSeg) ? firstSeg : "a"
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#0b1828]/95 backdrop-blur-md border-t border-[#1a3048]"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div className="max-w-3xl mx-auto flex">
         {TABS.map(tab => {
-          const active = pathname === tab.href
+          // パラメータタブ（href="/"）は現在のチームURLに追従
+          const href = tab.href === "/" ? `/${currentTeam}` : tab.href
+          const active = tab.href === "/"
+            ? VALID_TEAMS.has(firstSeg)
+            : pathname === tab.href
           return (
             <Link
               key={tab.href}
-              href={tab.href}
+              href={href}
               className={`flex-1 flex flex-col items-center justify-center gap-1 min-h-[56px] py-2 transition-colors relative ${
                 active ? "text-cyan-400" : "text-gray-500 hover:text-gray-300 active:text-gray-200"
               }`}

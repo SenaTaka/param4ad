@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { storeGet, storeSet } from "@/lib/store"
 import type { RaspiStatus } from "@/lib/defaults"
+import { key, teamOf, robotOf } from "@/lib/keys"
 
 export type { RaspiStatus }
 
 function robotKey(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("robot") || "default"
-  return `status:${id}`
+  return key("status", teamOf(req), robotOf(req))
 }
 
 export async function GET(req: NextRequest) {
