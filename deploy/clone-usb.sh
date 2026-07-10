@@ -10,12 +10,17 @@
 #   2. lsblk でデバイス名を確認（例: /dev/sdb。起動中のディスクと間違えないこと）
 #   3. sudo bash deploy/clone-usb.sh /dev/sdb
 #
+# 【中断からの再開】フォーマットせずコピー済みファイルを飛ばして続きから:
+#   sudo bash deploy/clone-usb.sh /dev/sdb --resume
+#
 # 完了後: シャットダウン → クローン先 USB を別のラズパイへ →
 #         起動して sudo bash deploy/set-team.sh <チーム> で割当変更
 # ==========================================================================
 set -euo pipefail
 
-TGT="${1:?使い方: sudo bash $0 /dev/sdX  （lsblk でクローン先を確認してから）}"
+TGT="${1:?使い方: sudo bash $0 /dev/sdX [--resume]  （lsblk でクローン先を確認してから）}"
+RESUME=0
+[[ "${2:-}" == "--resume" ]] && RESUME=1
 
 if [[ $EUID -ne 0 ]]; then
   echo "root権限が必要です:  sudo bash $0 $TGT" >&2
@@ -51,11 +56,19 @@ if (( TGT_BYTES < NEED_BYTES )); then
 fi
 
 echo "=============================================="
-echo " クローン先: $TGT  （全データが消去されます）"
+if (( RESUME )); then
+  echo " クローン再開: $TGT  （フォーマットせず続きからコピー）"
+else
+  echo " クローン先: $TGT  （全データが消去されます）"
+fi
 echo "=============================================="
 lsblk -o NAME,SIZE,TYPE,MOUNTPOINTS "$TGT"
 echo
-read -r -p "本当に $TGT を初期化してクローンしますか? 続行するには yes と入力: " ans
+if (( RESUME )); then
+  read -r -p "$TGT へ続きからコピーします。よければ yes と入力: " ans
+else
+  read -r -p "本当に $TGT を初期化してクローンしますか? 続行するには yes と入力: " ans
+fi
 [[ "$ans" == "yes" ]] || { echo "中止しました。"; exit 1; }
 
 # --- 電力確保: 走行プログラムを止める（LiDAR給電との併用でUSBが瞬断するため）---
@@ -69,27 +82,35 @@ if ls /dev/ttyUSB* >/dev/null 2>&1; then
   read -r -p "  （抜いたら Enter）" _
 fi
 
-# マウント中のパーティションがあれば外す
+# マウント中のパーティションがあれば外す（中断後の残りマウント含む）
 for p in $(lsblk -lno NAME "$TGT" | tail -n +2); do
   umount -q "/dev/$p" 2>/dev/null || true
 done
-
-# --- パーティション作成（boot: FAT32 512MB / root: ext4 残り全部）---
-echo "[clone] パーティション作成..."
-parted -s "$TGT" mklabel msdos \
-  mkpart primary fat32 1MiB 513MiB \
-  mkpart primary ext4 513MiB 100% \
-  set 1 boot on set 1 lba on
-partprobe "$TGT"
-sleep 2
 
 # パーティション名（/dev/sdb → sdb1, /dev/mmcblk0 → mmcblk0p1）
 P1="${TGT}1"; P2="${TGT}2"
 [[ "$TGT" =~ [0-9]$ ]] && { P1="${TGT}p1"; P2="${TGT}p2"; }
 
-echo "[clone] フォーマット..."
-mkfs.vfat -F 32 -n system-boot "$P1" >/dev/null
-mkfs.ext4 -qF -L writable "$P2"
+if (( RESUME )); then
+  # 再開時: 前回のパーティションとラベルが正しいか確認だけする
+  if [[ "$(lsblk -no LABEL "$P2" 2>/dev/null)" != "writable" ]]; then
+    echo "エラー: $P2 のラベルが writable ではありません。--resume なしでやり直してください。" >&2
+    exit 1
+  fi
+else
+  # --- パーティション作成（boot: FAT32 512MB / root: ext4 残り全部）---
+  echo "[clone] パーティション作成..."
+  parted -s "$TGT" mklabel msdos \
+    mkpart primary fat32 1MiB 513MiB \
+    mkpart primary ext4 513MiB 100% \
+    set 1 boot on set 1 lba on
+  partprobe "$TGT"
+  sleep 2
+
+  echo "[clone] フォーマット..."
+  mkfs.vfat -F 32 -n system-boot "$P1" >/dev/null
+  mkfs.ext4 -qF -L writable "$P2"
+fi
 
 MNT=$(mktemp -d)
 mount "$P2" "$MNT"
