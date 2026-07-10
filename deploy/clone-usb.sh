@@ -58,6 +58,17 @@ echo
 read -r -p "本当に $TGT を初期化してクローンしますか? 続行するには yes と入力: " ans
 [[ "$ans" == "yes" ]] || { echo "中止しました。"; exit 1; }
 
+# --- 電力確保: 走行プログラムを止める（LiDAR給電との併用でUSBが瞬断するため）---
+if systemctl is-active -q param4ad 2>/dev/null; then
+  echo "[clone] param4ad を一時停止（電力確保。終了後: sudo systemctl start param4ad）"
+  systemctl stop param4ad
+fi
+if ls /dev/ttyUSB* >/dev/null 2>&1; then
+  echo "⚠ LiDAR が接続されています。電力不足による I/O エラーを防ぐため、"
+  echo "  LiDAR の USB ケーブルを抜いてから Enter を押してください。"
+  read -r -p "  （抜いたら Enter）" _
+fi
+
 # マウント中のパーティションがあれば外す
 for p in $(lsblk -lno NAME "$TGT" | tail -n +2); do
   umount -q "/dev/$p" 2>/dev/null || true

@@ -128,25 +128,37 @@ journalctl -u param4ad -b   # team=e のバナーが出ればOK`}</Code>
         {/* 2台目のクローン */}
         <Section color="green" title="2台目を作る（USBクローン）" emoji="👯">
           <p className="text-gray-300 mb-3">
-            設定済みの USB をまるごとコピーすれば、Wi-Fi 設定・自動起動込みの2台目がすぐ作れます。
-            変えるのは<strong className="text-white">チーム名だけ</strong>でOK。
+            設定済みのシステムを別の USB へコピーすれば、Wi-Fi 設定・自動起動込みの2台目が作れます。
+            <M>clone-usb.sh</M> は使用中のデータだけコピーするので、
+            <strong className="text-white">元より小さい USB でもOK</strong>。作業は元USBで起動したラズパイ上で行います。
           </p>
-          <Code>{`# ① Mac で USB をクローン（元USBを挿して番号確認 → 十分注意して実行）
-diskutil list external            # 例: 元=disk4
-sudo dd if=/dev/rdisk4 of=~/raspi.img bs=4m status=progress
-# 新しいUSB（同容量以上）に差し替えて番号確認 → 例: disk4
-diskutil unmountDisk /dev/disk4
-sudo dd if=~/raspi.img of=/dev/rdisk4 bs=4m status=progress
+          <Code>{`# ① 電力を確保する（重要！これをしないと途中で I/O エラーになる）
+sudo systemctl stop param4ad     # 走行プログラム停止（LiDARも止まる）
+#    さらに LiDAR の USB ケーブルも抜いておく
 
-# ② 新しいラズパイで起動後、チームだけ変更
-sudo bash ~/car/vivi/deploy/set-team.sh d   # チームDにする例`}</Code>
+# ② クローン先 USB をラズパイに挿してデバイス名を確認
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINTS   # 起動中でない方（例: /dev/sdb）
+
+# ③ クローン実行（対象を表示して yes 入力で開始。数分〜数十分）
+sudo bash ~/car/vivi/deploy/clone-usb.sh /dev/sdb
+
+# ④ 完了後: シャットダウン → クローンUSBを2号機へ挿して起動
+sudo shutdown -h now
+
+# ⑤ 2号機でチームだけ変更（machine-id 重複解消はクローン時に自動済み）
+sudo bash ~/car/vivi/deploy/set-team.sh d          # 例: チームD
+sudo hostnamectl set-hostname sena-ras-2           # 区別用（任意）`}</Code>
           <ul className="text-gray-300 text-sm mt-3 space-y-1">
-            <li><K>machine-id</K> クローン後は重複を解消（同じIPが振られるのを防ぐ）:
-              <M>sudo truncate -s0 /etc/machine-id && sudo rm -f /var/lib/dbus/machine-id && sudo reboot</M></li>
-            <li><K>ホスト名</K> 区別したければ <M>sudo hostnamectl set-hostname sena-ras-2</M></li>
             <li><K>同じチームで2台</K> 走らせる場合のみ <M>set-team.sh e robo2 2号機</M> のように ROBOT_ID も分ける</li>
+            <li><K>2本挿し起動禁止</K> 同じラベルの USB を2本挿したまま起動しない（起動ディスクが不定になる）</li>
           </ul>
-          <Note>dd はディスク番号を間違えると Mac 側のデータを消します。<M>diskutil list external</M> でサイズと名前を必ず確認してから実行。</Note>
+          <Note>
+            <strong className="text-white">コピー中に I/O エラーが出たら</strong>: 電力不足か接触不良。
+            ①走行プログラム停止 + LiDAR を抜く → ②USB を挿し直す（青のUSB3がダメなら黒のUSB2ポートへ）→
+            ③<M>lsblk</M> で名前を確認し直して再実行（スクリプトが最初からやり直すので安全）。
+            それでも同じ場所で失敗するなら <M>dmesg | tail -30</M> を確認 —
+            USB スティック自体の不良の可能性（別のスティックか、セルフパワーのUSBハブで試す）。
+          </Note>
         </Section>
 
         {/* 7. トラブルシューティング */}
