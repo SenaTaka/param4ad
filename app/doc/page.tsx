@@ -55,9 +55,16 @@ sudo bash deploy/add-wifi.sh "会場のSSID" "パスワード" 20
 sudo bash deploy/add-wifi.sh "iPhone-sena" "hotspotpass" 30`}</Code>
           <ul className="text-gray-300 text-sm mt-3 space-y-1">
             <li><K>優先度</K> 数字が大きいほど優先。複数の電波が届く場所では高い方に接続</li>
-            <li><K>確認</K> <M>nmcli connection show</M>（登録一覧）/ <M>nmcli device wifi list</M>（見えている電波）</li>
+            <li><K>優先度の変更</K> <M>sudo nmcli connection modify &quot;SSID&quot; connection.autoconnect-priority 100</M></li>
+            <li><K>確認</K> <M>nmcli -f NAME,AUTOCONNECT-PRIORITY connection show</M> / <M>nmcli device wifi list</M>（見えている電波）</li>
             <li><K>削除</K> <M>sudo nmcli connection delete &quot;SSID&quot;</M></li>
           </ul>
+          <Note>
+            優先度が効くのは<strong className="text-white">接続先を選ぶ瞬間（起動時・切断時）だけ</strong>。
+            スマホ優先にしたい場合は「ホットスポットをONにしてからラズパイの電源を入れる」こと。
+            接続後にホットスポットをONにしても自動では乗り換えない
+            （手動切替: <M>sudo nmcli connection up &quot;SSID&quot;</M>）。
+          </Note>
           <Note>
             現地で繋がらないときの復旧手段: スマホのテザリングを登録済みにしておけば、
             ホットスポットON → ラズパイが自動接続 → スマホと同じネットワークから SSH して会場 Wi-Fi を登録できます。
