@@ -125,6 +125,30 @@ journalctl -u param4ad -b   # team=e のバナーが出ればOK`}</Code>
           </p>
         </Section>
 
+        {/* 2台目のクローン */}
+        <Section color="green" title="2台目を作る（USBクローン）" emoji="👯">
+          <p className="text-gray-300 mb-3">
+            設定済みの USB をまるごとコピーすれば、Wi-Fi 設定・自動起動込みの2台目がすぐ作れます。
+            変えるのは<strong className="text-white">チーム名だけ</strong>でOK。
+          </p>
+          <Code>{`# ① Mac で USB をクローン（元USBを挿して番号確認 → 十分注意して実行）
+diskutil list external            # 例: 元=disk4
+sudo dd if=/dev/rdisk4 of=~/raspi.img bs=4m status=progress
+# 新しいUSB（同容量以上）に差し替えて番号確認 → 例: disk4
+diskutil unmountDisk /dev/disk4
+sudo dd if=~/raspi.img of=/dev/rdisk4 bs=4m status=progress
+
+# ② 新しいラズパイで起動後、チームだけ変更
+sudo bash ~/car/vivi/deploy/set-team.sh d   # チームDにする例`}</Code>
+          <ul className="text-gray-300 text-sm mt-3 space-y-1">
+            <li><K>machine-id</K> クローン後は重複を解消（同じIPが振られるのを防ぐ）:
+              <M>sudo truncate -s0 /etc/machine-id && sudo rm -f /var/lib/dbus/machine-id && sudo reboot</M></li>
+            <li><K>ホスト名</K> 区別したければ <M>sudo hostnamectl set-hostname sena-ras-2</M></li>
+            <li><K>同じチームで2台</K> 走らせる場合のみ <M>set-team.sh e robo2 2号機</M> のように ROBOT_ID も分ける</li>
+          </ul>
+          <Note>dd はディスク番号を間違えると Mac 側のデータを消します。<M>diskutil list external</M> でサイズと名前を必ず確認してから実行。</Note>
+        </Section>
+
         {/* 7. トラブルシューティング */}
         <Section color="red" title="トラブルシューティング" emoji="🚨">
           <div className="space-y-4 text-sm">
