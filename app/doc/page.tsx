@@ -42,6 +42,28 @@ export default function DocPage() {
           <Note>起動直後にネット未接続でも放置でOK。接続でき次第、自動で Web UI に現れます。</Note>
         </Section>
 
+        {/* Wi-Fi の追加 */}
+        <Section color="purple" title="別の Wi-Fi で使う（会場・テザリング）" emoji="📶">
+          <p className="text-gray-300 mb-3">
+            <strong className="text-white">新しい Wi-Fi は現地に行く前に登録しておく</strong>のが鉄則です。
+            ネットに繋がらないと SSH もできなくなります。登録済みの Wi-Fi には起動時に自動接続します。
+          </p>
+          <Code>{`# ラズパイ上で（電波が届かない場所でも登録できる）
+sudo bash deploy/add-wifi.sh "会場のSSID" "パスワード" 20
+
+# 保険としてスマホのテザリングも登録しておく（優先度高め）
+sudo bash deploy/add-wifi.sh "iPhone-sena" "hotspotpass" 30`}</Code>
+          <ul className="text-gray-300 text-sm mt-3 space-y-1">
+            <li><K>優先度</K> 数字が大きいほど優先。複数の電波が届く場所では高い方に接続</li>
+            <li><K>確認</K> <M>nmcli connection show</M>（登録一覧）/ <M>nmcli device wifi list</M>（見えている電波）</li>
+            <li><K>削除</K> <M>sudo nmcli connection delete &quot;SSID&quot;</M></li>
+          </ul>
+          <Note>
+            現地で繋がらないときの復旧手段: スマホのテザリングを登録済みにしておけば、
+            ホットスポットON → ラズパイが自動接続 → スマホと同じネットワークから SSH して会場 Wi-Fi を登録できます。
+          </Note>
+        </Section>
+
         {/* 3. 走行操作 */}
         <Section color="yellow" title="走行の操作（Web UI）" emoji="🎮">
           <ul className="text-gray-300 text-sm space-y-2">
