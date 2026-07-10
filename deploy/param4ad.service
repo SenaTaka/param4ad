@@ -1,0 +1,58 @@
+# ==========================================================================
+# param4ad — LiDAR FTG 自動運転を電源ONで自動起動する systemd ユニット
+# ==========================================================================
+#
+# 【インストール手順（ラズパイ上で実行）】
+#   1. パスとユーザーを環境に合わせて修正（下の User= と ExecStart=、WorkingDirectory=）
+#        - ~/car/vivi が実際にどこにあるか確認: ls -d ~/car/vivi
+#        - ユーザー名確認: whoami
+#   2. コピーして有効化:
+#        sudo cp deploy/param4ad.service /etc/systemd/system/param4ad.service
+#        sudo systemctl daemon-reload
+#        sudo systemctl enable --now param4ad
+#   3. ログ確認（ネット接続・発進防止・走行状況が見える）:
+#        journalctl -u param4ad -f
+#   4. 停止 / 無効化:
+#        sudo systemctl stop param4ad
+#        sudo systemctl disable param4ad
+#
+# 【動作】
+#   - network-online.target 後に起動 → param1.py が更にネット接続を待つ（LED点滅）
+#   - 接続後にサーバーのコマンドを PAUSE にリセット（前回RUNによる誤発進を防止）
+#   - AUTO_ARM=1 で armed 自動ON（起動時は PAUSE 維持。WebUI の START で走行）
+#   - クラッシュ時は自動再起動
+# ==========================================================================
+
+[Unit]
+Description=param4ad LiDAR FTG auto-drive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# GPIO/LiDAR アクセスのため root 実行（従来 sudo で起動していた前提）
+User=root
+
+# --- 環境変数（必要に応じて変更）---
+Environment=PARAM_SERVER_URL=https://param4ad.vercel.app
+Environment=AUTO_ARM=1
+# チーム割当（Web UI の /a〜/e に対応）
+Environment=TEAM=e
+# 複数台で走らせる場合はロボットを識別（コメント解除して設定）:
+# Environment=ROBOT_ID=ST_test
+# Environment=ROBOT_NAME=ST_test
+
+# --- 実行パス ---
+# env 経由にして、いつも使っている python3（PATH上のもの）を確実に使う
+WorkingDirectory=/home/sena/car/vivi
+ExecStart=/usr/bin/env python3 /home/sena/car/vivi/param1.py
+
+Restart=on-failure
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

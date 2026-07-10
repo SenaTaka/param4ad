@@ -105,6 +105,11 @@ SPEED_CMD_SCALE = 1.1
 PWMA, AIN1, AIN2 = 13, 21, 20
 PWMB, BIN1, BIN2 = 16, 26, 19
 
+# ステータスLED（ネットワーク接続表示）
+# BCM番号。既存ピン(13/21/20/16/26/19)と重複しない空きピンにすること。
+# 実際のLED配線に合わせて変更する。LEDを使わない場合は None。
+LED_PIN = 12
+
 
 # ==========================================
 # Vercel API 連携
@@ -112,7 +117,69 @@ PWMB, BIN1, BIN2 = 16, 26, 19
 # ラズパイ起動時に export PARAM_SERVER_URL=https://param4ad.vercel.app
 # を設定するとパラメータを取得し、コマンド(RUN/PAUSE)を監視する
 
+# チーム (a〜e)。Web UI の /a〜/e に対応。未指定・不正値はサーバー側で "a" 扱い。
+TEAM = os.environ.get("TEAM", "a").strip().lower() or "a"
+
 _params_lock = threading.Lock()  # グローバルパラメータ更新のロック
+
+
+def get_ip():
+    """ローカルIPアドレスを取得する（外部へ実際には送信しないUDPトリック）。取得不可なら None。"""
+    import socket
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return None
+    finally:
+        if s is not None:
+            try:
+                s.close()
+            except Exception:
+                pass
+
+
+def wait_for_network(led=None, timeout: float = 60.0):
+    """ネットワーク接続（ローカルIP取得可）を待つ。接続でIPを返す。
+
+    - 接続待ち中は LED を点滅（"blink"）、接続で点灯（"on"）にする。
+    - timeout 秒で諦めてオフライン継続（None を返す）。
+    """
+    if led is not None:
+        led.set("blink")
+    t0 = time.monotonic()
+    logged_wait = False
+    while time.monotonic() - t0 < timeout:
+        ip = get_ip()
+        if ip:
+            print(f"[NET] ネットワーク接続OK  IP={ip}", flush=True)
+            if led is not None:
+                led.set("on")
+            return ip
+        if not logged_wait:
+            print("[NET] ネットワーク接続待ち...", flush=True)
+            logged_wait = True
+        time.sleep(2.0)
+    print("[NET] ネットワーク接続タイムアウト（オフラインで継続）", flush=True)
+    return None
+
+
+def reset_command_to_pause(url: str, robot_id: str) -> None:
+    """起動時にサーバー側コマンドを PAUSE に上書きし、前回の RUN による誤発進を防ぐ。"""
+    endpoint = f"{url}/api/command?robot={robot_id}&team={TEAM}"
+    try:
+        body = json.dumps({"command": "PAUSE"}).encode()
+        req = urllib.request.Request(
+            endpoint, data=body,
+            headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+        print("[API] 起動時コマンドを PAUSE にリセット（誤発進防止）", flush=True)
+    except Exception as e:
+        print(f"[API] コマンドリセット失敗: {type(e).__name__}: {e}", flush=True)
 
 
 def test_api_connection(url: str) -> bool:
@@ -242,7 +309,7 @@ def register_robot(url: str, robot_id: str, robot_name: str) -> None:
     try:
         body = json.dumps({"id": robot_id, "name": robot_name}).encode()
         req = urllib.request.Request(
-            f"{url}/api/robots", data=body,
+            f"{url}/api/robots?team={TEAM}", data=body,
             headers={"Content-Type": "application/json", "User-Agent": "raspi-ftg/1.0"},
             method="POST",
         )
@@ -254,7 +321,7 @@ def register_robot(url: str, robot_id: str, robot_name: str) -> None:
 
 def fetch_and_apply_params(url: str, robot_id: str) -> None:
     """起動時: Vercel API からパラメータを取得して反映する。"""
-    endpoint = f"{url}/api/params?robot={robot_id}"
+    endpoint = f"{url}/api/params?robot={robot_id}&team={TEAM}"
     print(f"[API] GET {endpoint}", flush=True)
     try:
         req = urllib.request.Request(endpoint, headers={"User-Agent": "raspi-ftg/1.0"})
@@ -296,9 +363,9 @@ def _post_status_async(ap, status_endpoint: str) -> None:
 
 def poll_command(ap, url: str, robot_id: str) -> None:
     """コマンドを 0.3 秒ごと、PAUSE 中はパラメータも約 3 秒ごとに取得して反映する。"""
-    cmd_endpoint    = f"{url}/api/command?robot={robot_id}"
-    param_endpoint  = f"{url}/api/params?robot={robot_id}"
-    status_endpoint = f"{url}/api/status?robot={robot_id}"
+    cmd_endpoint    = f"{url}/api/command?robot={robot_id}&team={TEAM}"
+    param_endpoint  = f"{url}/api/params?robot={robot_id}&team={TEAM}"
+    status_endpoint = f"{url}/api/status?robot={robot_id}&team={TEAM}"
     print(f"[API] poll_command started  cmd={cmd_endpoint}", flush=True)
 
     _last_cmd        = None
@@ -326,6 +393,8 @@ def poll_command(ap, url: str, robot_id: str) -> None:
             cmd = d.get("command", "PAUSE")
             _ok_count += 1
             _err_count = 0
+            if ap.led is not None:
+                ap.led.set("on")  # 通信OK → 点灯
 
             with ap.lock:
                 armed = ap.armed
@@ -352,10 +421,14 @@ def poll_command(ap, url: str, robot_id: str) -> None:
 
         except urllib.error.URLError as e:
             _err_count += 1
+            if ap.led is not None and _err_count >= 3:
+                ap.led.set("blink")  # 連続切断 → 点滅
             if _err_count == 1 or _err_count % 10 == 0:
                 ap.dbg.log(f"[API] 通信エラー ({_err_count}回連続): {e.reason}")
         except Exception as e:
             _err_count += 1
+            if ap.led is not None and _err_count >= 3:
+                ap.led.set("blink")  # 連続切断 → 点滅
             if _err_count == 1 or _err_count % 10 == 0:
                 ap.dbg.log(f"[API] エラー ({_err_count}回連続): {type(e).__name__}: {e}")
 
@@ -600,6 +673,60 @@ class DebugLog:
 
 
 # ==========================================
+# 1.9) ステータスLED（ネットワーク接続表示）
+# ==========================================
+class StatusLed:
+    """ネットワーク接続状態を LED で表示するデーモン。
+
+    state:
+      "off"   消灯
+      "blink" 点滅（接続待ち）
+      "on"    点灯（接続OK）
+
+    注意: GPIO.setmode(GPIO.BCM) 済みの状態で生成すること。
+    ピンの消灯・解放は MotorDriver.__exit__ の GPIO.cleanup() が一括で行う。
+    """
+    def __init__(self, pin):
+        self.pin = pin
+        self.state = "off"
+        self._lock = threading.Lock()
+        self._running = True
+        GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def set(self, state: str):
+        with self._lock:
+            self.state = state
+
+    def _loop(self):
+        on = False
+        while self._running:
+            with self._lock:
+                st = self.state
+            try:
+                if st == "on":
+                    GPIO.output(self.pin, 1)
+                    time.sleep(0.2)
+                elif st == "blink":
+                    on = not on
+                    GPIO.output(self.pin, 1 if on else 0)
+                    time.sleep(0.3)
+                else:  # "off"
+                    GPIO.output(self.pin, 0)
+                    time.sleep(0.2)
+            except Exception:
+                # GPIO.cleanup() 後などはループを抜ける
+                break
+
+    def close(self):
+        self._running = False
+        try:
+            GPIO.output(self.pin, 0)
+        except Exception:
+            pass
+
+
+# ==========================================
 # 2) モータ制御（あなたの方式を踏襲）
 # ==========================================
 class MotorDriver:
@@ -712,12 +839,14 @@ class AutoPilot:
 
         self._last_target_deg = 0.0
 
+        self.led = None  # StatusLed（main で設定。無ければ None）
+
         # ラズパイ→WebUI フィードバック用（poll_command が読んで POST）
         self._status = {
             "mode": "PAUSE", "d_front": None, "steer": 0.0,
             "left": 0.0, "right": 0.0, "tgt_deg": 0.0,
             "dmin": None, "gap_width": None, "ts": 0.0,
-            "param_updated_at": None,
+            "param_updated_at": None, "ip": None,
         }
         self._status_lock = threading.Lock()
 
@@ -1073,19 +1202,41 @@ def keyboard_loop(ap: AutoPilot):
 # 6) main
 # ==========================================
 def main():
-    # ---- Vercel API 接続 ----
+    # ---- 環境変数 ----
     _server_url = os.environ.get("PARAM_SERVER_URL", "").rstrip("/")
     _robot_id   = os.environ.get("ROBOT_ID", "default")
     _robot_name = os.environ.get("ROBOT_NAME", _robot_id)
+    # systemd（非TTY）では自動で armed=ON。SSH手動でも AUTO_ARM=1 で強制ON可。
+    _interactive = sys.stdin.isatty()
+    _auto_arm = (os.environ.get("AUTO_ARM", "").strip() == "1") or (not _interactive)
 
-    print(f"=== 自動運転 (LiDAR + PWM) : Follow the Gap  robot={_robot_id} ===")
+    print(f"=== 自動運転 (LiDAR + PWM) : Follow the Gap  robot={_robot_id} team={TEAM} ===")
+
+    # ---- ステータスLED起動 + ネットワーク接続待ち ----
+    # MotorDriver より前に GPIO を初期化して LED を点滅（接続待ち表示）させる。
+    GPIO.setwarnings(False)
+    GPIO.setmode(GPIO.BCM)
+    led = None
+    if LED_PIN is not None:
+        try:
+            led = StatusLed(LED_PIN)
+        except Exception as e:
+            print(f"[LED] 初期化失敗 pin={LED_PIN}: {type(e).__name__}: {e}", flush=True)
+            led = None
+
+    _ip = wait_for_network(led, timeout=60.0)
+
+    # ---- Vercel API 接続 ----
+    _api_ok = False
     if _server_url:
         _api_ok = test_api_connection(_server_url)
         if _api_ok:
+            # 誤発進防止: 前回の RUN が残っていても起動時に必ず PAUSE へ戻す
+            reset_command_to_pause(_server_url, _robot_id)
             register_robot(_server_url, _robot_id, _robot_name)
             fetch_and_apply_params(_server_url, _robot_id)
         else:
-            print("[API] 接続失敗のためローカルパラメータを使用", flush=True)
+            print("[API] 接続失敗 → ローカルパラメータで起動し、接続をバックグラウンドで再試行", flush=True)
     else:
         print("[API] PARAM_SERVER_URL 未設定 → ローカルパラメータを使用")
         print("      (設定例: export PARAM_SERVER_URL=https://param4ad.vercel.app)")
@@ -1095,6 +1246,8 @@ def main():
     print(f"FGM_CLEAR_TH  = {FGM_CLEAR_TH}")
     print(f"BUBBLE_RADIUS = {FGM_BUBBLE_RADIUS}")
     print(f"BASE_SPEED    = {BASE_SPEED}")
+    if _auto_arm:
+        print("[AUTO] armed 自動ON（起動時は PAUSE 維持。WebUI の START で走行開始）")
     if _server_url:
         print("コマンド: Vercel UI の START/STOP、または g/s キー")
     else:
@@ -1102,28 +1255,72 @@ def main():
     print("================================================")
 
     laser = None
-    with MotorDriver() as motor:  # __exit__ で GPIO.cleanup() を保証
+    with MotorDriver() as motor:  # __exit__ で GPIO.cleanup() を保証（LEDピンも消灯）
         try:
             laser = init_lidar()
             ap = AutoPilot(motor, laser)
+            ap.led = led
+            with ap._status_lock:
+                ap._status["ip"] = _ip
 
             th = threading.Thread(target=ap.loop, daemon=True)
             th.start()
 
             # Vercel コマンドポーリングスレッド
             if _server_url:
-                cmd_th = threading.Thread(
-                    target=poll_command, args=(ap, _server_url, _robot_id), daemon=True
-                )
-                cmd_th.start()
-                print(f"[API] poll_command スレッド開始 (1秒ごとに {_server_url}/api/command をチェック)", flush=True)
+                def _start_polling():
+                    cmd_th = threading.Thread(
+                        target=poll_command, args=(ap, _server_url, _robot_id), daemon=True
+                    )
+                    cmd_th.start()
+                    print(f"[API] poll_command スレッド開始 (0.3秒ごとに {_server_url}/api/command をチェック)", flush=True)
+
+                if _api_ok:
+                    _start_polling()
+                else:
+                    # 起動時に接続できなかった場合: 接続できるまで待ち、
+                    # フル初期化（PAUSEリセット→登録→パラメータ取得）後にポーリング開始。
+                    # 先にポーリングを始めると、前回の RUN が残っていた場合に誤発進するため。
+                    def _retry_api_init():
+                        while True:
+                            with ap.lock:
+                                if not ap.running:
+                                    return
+                            ip = get_ip()
+                            if ip and test_api_connection(_server_url):
+                                reset_command_to_pause(_server_url, _robot_id)
+                                register_robot(_server_url, _robot_id, _robot_name)
+                                fetch_and_apply_params(_server_url, _robot_id)
+                                with ap._status_lock:
+                                    ap._status["ip"] = ip
+                                if led is not None:
+                                    led.set("on")
+                                _start_polling()
+                                return
+                            time.sleep(3.0)
+                    threading.Thread(target=_retry_api_init, daemon=True).start()
+                    print("[API] 接続リトライスレッド開始（接続後に PAUSE リセット→登録→ポーリング開始）", flush=True)
 
             ap.set_mode("PAUSE")
-            keyboard_loop(ap)
+            if _auto_arm:
+                ap.set_armed(True)  # mode は PAUSE のまま → START を押すまで走らない
+
+            if _interactive:
+                keyboard_loop(ap)
+            else:
+                # 非対話（systemd）: キー入力不可。running が False になるまで待機。
+                print("[SYS] 非対話モード（systemd）: WebUI の START/STOP で制御してください", flush=True)
+                while True:
+                    with ap.lock:
+                        if not ap.running:
+                            break
+                    time.sleep(0.3)
 
         except KeyboardInterrupt:
             print("\n停止操作を受信", flush=True)
         finally:
+            if led is not None:
+                led.close()
             if laser is not None:
                 try:
                     laser.turnOff()
