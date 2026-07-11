@@ -161,6 +161,45 @@ sudo hostnamectl set-hostname sena-ras-2           # 区別用（任意）`}</Co
           </Note>
         </Section>
 
+        {/* 複数台の運用 */}
+        <Section color="yellow" title="複数台の運用（IP・チーム割当表）" emoji="🚗">
+          <p className="text-gray-300 mb-3">
+            テザリング（sena）は静的IPのため、機体ごとに末尾を変える。
+            自宅 TP-Link（192.168.24.230）は全機共通 = <strong className="text-white">自宅Wi-Fiは1台ずつ</strong>。
+            全機の接続状況は <a href="/admin" className="text-cyan-400 underline">/admin</a> で監視できる。
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-gray-300 font-mono">
+              <thead>
+                <tr className="text-[11px] text-gray-500 border-b border-[#1a3048]">
+                  <th className="text-left py-1 pr-3">機体</th>
+                  <th className="text-left py-1 pr-3">チーム</th>
+                  <th className="text-left py-1 pr-3">テザリングIP</th>
+                  <th className="text-left py-1">ホスト名</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">1号機</td><td className="text-cyan-300">e</td><td>172.20.10.10</td><td>sena-ras-ubuntu</td></tr>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">2号機</td><td className="text-cyan-300">a</td><td>172.20.10.11</td><td>sena-ras-a</td></tr>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">3号機</td><td className="text-cyan-300">b</td><td>172.20.10.12</td><td>sena-ras-b</td></tr>
+                <tr><td className="py-1.5 pr-3">4号機</td><td className="text-cyan-300">c</td><td>172.20.10.13</td><td>sena-ras-c</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-gray-300 text-sm mt-4 mb-2 font-bold">クローン初回セットアップ（機体ごとに値を変える）:</p>
+          <Code>{`ssh sena@172.20.10.10        # クローン直後は必ず .10
+
+sudo nmcli connection modify sena ipv4.addresses 172.20.10.11/24
+sudo bash ~/car/vivi/deploy/set-team.sh a
+sudo hostnamectl set-hostname sena-ras-a
+sudo reboot`}</Code>
+          <Note>
+            <strong className="text-white">鉄則: クローンの初回起動は単独で行う</strong>。
+            全クローンは最初 172.20.10.10 を名乗るため、IP変更・再起動が済むまで他の機体の電源を入れないこと。
+            チームが違えば ROBOT_ID は default のままでよい。
+          </Note>
+        </Section>
+
         {/* 7. トラブルシューティング */}
         <Section color="red" title="トラブルシューティング" emoji="🚨">
           <div className="space-y-4 text-sm">
