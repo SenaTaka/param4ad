@@ -1,5 +1,40 @@
 # 作業記録
 
+## 2026-07-11: USBクローン続き（--lite / 熱ダレ対策 / あと3.5GB）
+
+### 分かったこと
+
+- **f3probe 判定: スティックは本物の128GB**（容量偽装ではない）
+- 真の原因: **連続書き込み7〜8GBでコントローラが熱ダレしてUSBバスから切断**される個体。
+  切断のたびにデバイス名が変わる（sdb → sdc → …）ので**毎回 lsblk で名前確認が必要**
+- この環境は LABEL=writable 起動ではなく PARTUUID/UUID 参照だった
+  → clone-usb.sh がクローン側の cmdline.txt / fstab を LABEL 参照に自動書き換えするよう修正
+  （書き換えないとクローンが元USBを root に探しに行くため、どのみち必須だった）
+- `dpkg was interrupted` は `sudo dpkg --configure -a` で復旧
+- SSH切断対策は tmux（セッション名 clone。復帰: `tmux attach -t clone`）
+
+### clone-usb.sh に追加した機能
+
+- `--resume`: フォーマットせずコピー済みをスキップして続きから
+- `--lite`: ROS / snap / LibreOffice / Thunderbird / Java / doc / キャッシュ / swapfile を除外
+  （走行系 python3・ydlidar・RPi.GPIO・systemd・Wi-Fi は残る。fstab の swap 行は自動無効化）
+- param4ad 自動停止 + LiDAR 取り外し確認（電力確保）
+
+### 現在の状態（次回はここから）
+
+- [ ] `--lite` フレッシュ実行が **8.2GB / 70% で切断**（総量 約11.7GB、**残り約3.5GB**）
+- [ ] 再開手順: **スティックを10〜15分冷却** → 挿し直し → `lsblk` で名前確認 →
+  ```bash
+  tmux attach -t clone   # なければ tmux new -s clone
+  sudo bash ~/car/vivi/deploy/clone-usb.sh /dev/sdX --lite --resume
+  ```
+  落ちたら冷却→再実行の繰り返しで毎回前進する
+- [ ] 完走後: shutdown → USBを2号機へ → `set-team.sh <チーム>` → `journalctl -u param4ad -b` で team= 確認
+- [ ] このスティックは連続書き込みに弱い個体。**本番前に信頼できるメーカー品への交換を検討**
+  （交換時は同じ clone-usb.sh がそのまま使える）
+
+---
+
 ## 2026-07-10: 自動起動・チームE割当・Wi-Fi・USBクローン
 
 ### やったこと
