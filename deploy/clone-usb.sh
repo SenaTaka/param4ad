@@ -13,14 +13,27 @@
 # 【中断からの再開】フォーマットせずコピー済みファイルを飛ばして続きから:
 #   sudo bash deploy/clone-usb.sh /dev/sdb --resume
 #
+# 【軽量クローン】走行に不要な大物（ROS / LibreOffice / snap / ドキュメント類）を
+# 除外してコピー量を減らす。小容量・不調気味の USB 向け:
+#   sudo bash deploy/clone-usb.sh /dev/sdb --lite
+#   ※ クローン先では Firefox 等の snap アプリ・ROS・LibreOffice は使えなくなる。
+#     走行系（python3 / ydlidar / RPi.GPIO / param1.py / systemd / Wi-Fi）は動く。
+#
 # 完了後: シャットダウン → クローン先 USB を別のラズパイへ →
 #         起動して sudo bash deploy/set-team.sh <チーム> で割当変更
 # ==========================================================================
 set -euo pipefail
 
-TGT="${1:?使い方: sudo bash $0 /dev/sdX [--resume]  （lsblk でクローン先を確認してから）}"
+TGT="${1:?使い方: sudo bash $0 /dev/sdX [--resume] [--lite]  （lsblk でクローン先を確認してから）}"
 RESUME=0
-[[ "${2:-}" == "--resume" ]] && RESUME=1
+LITE=0
+for arg in "${@:2}"; do
+  case "$arg" in
+    --resume) RESUME=1 ;;
+    --lite)   LITE=1 ;;
+    *) echo "不明なオプション: $arg" >&2; exit 1 ;;
+  esac
+done
 
 if [[ $EUID -ne 0 ]]; then
   echo "root権限が必要です:  sudo bash $0 $TGT" >&2
@@ -50,9 +63,15 @@ USED_KB=$(df --output=used -k / | tail -1 | tr -d ' ')
 TGT_BYTES=$(lsblk -bdno SIZE "$TGT")
 NEED_BYTES=$(( (USED_KB + 2*1024*1024) * 1024 ))
 if (( TGT_BYTES < NEED_BYTES )); then
-  echo "エラー: クローン先の容量が不足しています。" >&2
-  echo "  必要: 約$(( NEED_BYTES / 1024 / 1024 / 1024 ))GB / クローン先: $(( TGT_BYTES / 1024 / 1024 / 1024 ))GB" >&2
-  exit 1
+  if (( LITE )); then
+    echo "⚠ フルクローンなら容量不足（必要 約$(( NEED_BYTES / 1024 / 1024 / 1024 ))GB / 先 $(( TGT_BYTES / 1024 / 1024 / 1024 ))GB）。"
+    echo "  --lite の除外で収まる可能性に賭けて続行します。"
+  else
+    echo "エラー: クローン先の容量が不足しています。" >&2
+    echo "  必要: 約$(( NEED_BYTES / 1024 / 1024 / 1024 ))GB / クローン先: $(( TGT_BYTES / 1024 / 1024 / 1024 ))GB" >&2
+    echo "  （--lite を付けると ROS/LibreOffice 等を除いた軽量クローンを試せます）" >&2
+    exit 1
+  fi
 fi
 
 echo "=============================================="
@@ -115,12 +134,37 @@ fi
 MNT=$(mktemp -d)
 mount "$P2" "$MNT"
 
+# --- rsync 除外リスト ---
+EXCLUDES=(
+  --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/*
+  --exclude=/tmp/* --exclude=/mnt/* --exclude=/media/* --exclude=/lost+found
+  --exclude=/boot/firmware/*
+)
+if (( LITE )); then
+  echo "[clone] --lite: 走行に不要な大物を除外します（ROS / LibreOffice / snap / doc 等）"
+  EXCLUDES+=(
+    # ROS
+    --exclude=/opt/ros --exclude=/home/*/ros2_ws
+    # snap アプリ（Firefox 等）と snap 本体データ
+    --exclude=/snap --exclude=/var/lib/snapd --exclude=/home/*/snap
+    # オフィス・メール・Java
+    --exclude=/usr/lib/libreoffice --exclude=/usr/share/libreoffice
+    --exclude=/usr/lib/thunderbird --exclude=/usr/lib/jvm
+    # ドキュメント・マニュアル類
+    --exclude=/usr/share/doc --exclude=/usr/share/man
+    --exclude=/usr/share/help --exclude=/usr/share/info
+    --exclude=/usr/share/example-content
+    # カーネルソース・キャッシュ・ログ・スワップ
+    --exclude=/usr/src
+    --exclude=/var/cache/* --exclude=/var/tmp/* --exclude=/var/log/*
+    --exclude=/var/lib/apt/lists/*
+    --exclude=/home/*/.cache --exclude=/root/.cache
+    --exclude=/swapfile
+  )
+fi
+
 echo "[clone] ルートFSをコピー（数分〜数十分かかります）..."
-rsync -aHAXx --info=progress2 \
-  --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* \
-  --exclude=/tmp/* --exclude=/mnt/* --exclude=/media/* --exclude=/lost+found \
-  --exclude=/boot/firmware/* \
-  / "$MNT"
+rsync -aHAXx --info=progress2 "${EXCLUDES[@]}" / "$MNT"
 
 mkdir -p "$MNT"/{proc,sys,dev,run,tmp,mnt,media} "$MNT/boot/firmware"
 
@@ -131,6 +175,12 @@ rsync -a /boot/firmware/ "$MNT/boot/firmware/"
 # --- クローン先の個体化: machine-id リセット（IP重複防止。次回起動で再生成）---
 truncate -s0 "$MNT/etc/machine-id"
 rm -f "$MNT/var/lib/dbus/machine-id"
+
+# --lite: swapfile を除外したので fstab のスワップ行を無効化（起動エラー防止）
+if (( LITE )) && grep -q '^/swapfile' "$MNT/etc/fstab" 2>/dev/null; then
+  sed -i 's|^/swapfile|#/swapfile|' "$MNT/etc/fstab"
+  echo "[clone] --lite: fstab の swapfile 行をコメントアウト"
+fi
 
 sync
 umount "$MNT/boot/firmware" "$MNT"
