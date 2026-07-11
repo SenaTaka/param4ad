@@ -132,6 +132,10 @@ journalctl -u param4ad -b   # team=e のバナーが出ればOK`}</Code>
             <M>clone-usb.sh</M> は使用中のデータだけコピーするので、
             <strong className="text-white">元より小さい USB でもOK</strong>。作業は元USBで起動したラズパイ上で行います。
           </p>
+          <p className="text-gray-300 text-sm mb-3">
+            <strong className="text-white">デフォルトは軽量クローン</strong>（ROS / snap / LibreOffice / doc 類を除外、約20GB→約12GB）。
+            走行系はすべて残る。全部コピーしたいときだけ <M>--full</M>、中断からの再開は <M>--resume</M> を付ける。
+          </p>
           <Code>{`# ① 電力を確保する（重要！これをしないと途中で I/O エラーになる）
 sudo systemctl stop param4ad     # 走行プログラム停止（LiDARも止まる）
 #    さらに LiDAR の USB ケーブルも抜いておく

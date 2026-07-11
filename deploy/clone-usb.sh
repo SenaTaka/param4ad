@@ -11,27 +11,30 @@
 #   2. lsblk でデバイス名を確認（例: /dev/sdb。起動中のディスクと間違えないこと）
 #   3. sudo bash deploy/clone-usb.sh /dev/sdb
 #
+# デフォルトは【軽量クローン】: 走行に不要な大物（ROS / LibreOffice / snap /
+# ドキュメント類）を除外してコピー量を減らす（約20GB→約12GB）。
+#   ※ クローン先では Firefox 等の snap アプリ・ROS・LibreOffice は使えなくなる。
+#     走行系（python3 / ydlidar / RPi.GPIO / param1.py / systemd / Wi-Fi）は動く。
+#
 # 【中断からの再開】フォーマットせずコピー済みファイルを飛ばして続きから:
 #   sudo bash deploy/clone-usb.sh /dev/sdb --resume
 #
-# 【軽量クローン】走行に不要な大物（ROS / LibreOffice / snap / ドキュメント類）を
-# 除外してコピー量を減らす。小容量・不調気味の USB 向け:
-#   sudo bash deploy/clone-usb.sh /dev/sdb --lite
-#   ※ クローン先では Firefox 等の snap アプリ・ROS・LibreOffice は使えなくなる。
-#     走行系（python3 / ydlidar / RPi.GPIO / param1.py / systemd / Wi-Fi）は動く。
+# 【フルクローン】何も除外せず全部コピーしたい場合:
+#   sudo bash deploy/clone-usb.sh /dev/sdb --full
 #
 # 完了後: シャットダウン → クローン先 USB を別のラズパイへ →
 #         起動して sudo bash deploy/set-team.sh <チーム> で割当変更
 # ==========================================================================
 set -euo pipefail
 
-TGT="${1:?使い方: sudo bash $0 /dev/sdX [--resume] [--lite]  （lsblk でクローン先を確認してから）}"
+TGT="${1:?使い方: sudo bash $0 /dev/sdX [--resume] [--full]  （lsblk でクローン先を確認してから）}"
 RESUME=0
-LITE=0
+LITE=1   # デフォルトは軽量クローン。--full で全部コピー
 for arg in "${@:2}"; do
   case "$arg" in
     --resume) RESUME=1 ;;
-    --lite)   LITE=1 ;;
+    --lite)   LITE=1 ;;   # 互換のため残す（デフォルトと同じ）
+    --full)   LITE=0 ;;
     *) echo "不明なオプション: $arg" >&2; exit 1 ;;
   esac
 done
@@ -73,7 +76,7 @@ if (( TGT_BYTES < NEED_BYTES )); then
   else
     echo "エラー: クローン先の容量が不足しています。" >&2
     echo "  必要: 約$(( NEED_BYTES / 1024 / 1024 / 1024 ))GB / クローン先: $(( TGT_BYTES / 1024 / 1024 / 1024 ))GB" >&2
-    echo "  （--lite を付けると ROS/LibreOffice 等を除いた軽量クローンを試せます）" >&2
+    echo "  （--full をやめてデフォルトの軽量クローンにすれば入る可能性があります）" >&2
     exit 1
   fi
 fi
