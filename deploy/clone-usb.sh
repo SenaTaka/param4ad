@@ -3,7 +3,8 @@
 # param4ad — 起動中のシステムを別の USB へクローンするスクリプト
 #
 # 元 USB より小さい USB へもクローンできる（使用中データのみコピー）。
-# Ubuntu for Raspberry Pi（LABEL=system-boot / writable 構成）専用。
+# Ubuntu for Raspberry Pi 用。元の起動方式（LABEL / PARTUUID / UUID）は問わず、
+# クローン側の cmdline.txt / fstab はラベル参照に自動書き換えする。
 #
 # 【使い方（ラズパイ上で・元USBで起動した状態で）】
 #   1. クローン先 USB をラズパイに挿す
@@ -51,10 +52,13 @@ if [[ "$TGT" == "$ROOT_DISK" ]]; then
   exit 1
 fi
 
-# --- ラベル起動の前提チェック ---
-if ! grep -q 'LABEL=writable' /etc/fstab || ! grep -q 'LABEL=writable' /boot/firmware/cmdline.txt; then
-  echo "エラー: この環境は LABEL=writable 起動ではありません（想定外の構成）。" >&2
-  echo "  /etc/fstab と /boot/firmware/cmdline.txt を確認してください。" >&2
+# --- 起動構成の確認 ---
+# 元が LABEL / PARTUUID / UUID のどの参照方式でもよい。
+# クローン側はフォーマット時に付けるラベル（system-boot / writable）を
+# 参照するよう、コピー後に cmdline.txt と fstab を書き換える。
+CMDLINE=/boot/firmware/cmdline.txt
+if [[ ! -f "$CMDLINE" ]]; then
+  echo "エラー: $CMDLINE が見つかりません（Ubuntu for Raspberry Pi 想定）。" >&2
   exit 1
 fi
 
@@ -171,6 +175,14 @@ mkdir -p "$MNT"/{proc,sys,dev,run,tmp,mnt,media} "$MNT/boot/firmware"
 echo "[clone] ブートパーティションをコピー..."
 mount "$P1" "$MNT/boot/firmware"
 rsync -a /boot/firmware/ "$MNT/boot/firmware/"
+
+# --- クローン先の起動設定をラベル参照に書き換え ---
+# 元の root= が PARTUUID/UUID のままだと、クローンが元USBを探して起動してしまう。
+sed -i -E 's|root=[^ ]+|root=LABEL=writable|' "$MNT/boot/firmware/cmdline.txt"
+awk '($1!~/^#/ && $2=="/"){$1="LABEL=writable"}
+     ($1!~/^#/ && $2=="/boot/firmware"){$1="LABEL=system-boot"}
+     {print}' "$MNT/etc/fstab" > "$MNT/etc/fstab.tmp" && mv "$MNT/etc/fstab.tmp" "$MNT/etc/fstab"
+echo "[clone] 起動設定を LABEL=writable / system-boot 参照に書き換え"
 
 # --- クローン先の個体化: machine-id リセット（IP重複防止。次回起動で再生成）---
 truncate -s0 "$MNT/etc/machine-id"
