@@ -174,24 +174,25 @@ sudo hostnamectl set-hostname sena-ras-2           # 区別用（任意）`}</Co
                 <tr className="text-[11px] text-gray-500 border-b border-[#1a3048]">
                   <th className="text-left py-1 pr-3">機体</th>
                   <th className="text-left py-1 pr-3">チーム</th>
-                  <th className="text-left py-1 pr-3">テザリングIP</th>
-                  <th className="text-left py-1">ホスト名</th>
+                  <th className="text-left py-1">テザリングIP</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">1号機</td><td className="text-cyan-300">e</td><td>172.20.10.10</td><td>sena-ras-ubuntu</td></tr>
-                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">2号機</td><td className="text-cyan-300">a</td><td>172.20.10.11</td><td>sena-ras-a</td></tr>
-                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">3号機</td><td className="text-cyan-300">b</td><td>172.20.10.12</td><td>sena-ras-b</td></tr>
-                <tr><td className="py-1.5 pr-3">4号機</td><td className="text-cyan-300">c</td><td>172.20.10.13</td><td>sena-ras-c</td></tr>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">1号機</td><td className="text-cyan-300">e</td><td>172.20.10.10</td></tr>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">2号機</td><td className="text-cyan-300">a</td><td>172.20.10.11</td></tr>
+                <tr className="border-b border-[#1a3048]/50"><td className="py-1.5 pr-3">3号機</td><td className="text-cyan-300">b</td><td>172.20.10.12</td></tr>
+                <tr><td className="py-1.5 pr-3">4号機</td><td className="text-cyan-300">c</td><td>172.20.10.13</td></tr>
               </tbody>
             </table>
           </div>
+          <p className="text-gray-400 text-xs mt-2">
+            ホスト名は全機 <M>sena-ras-ubuntu</M> のまま（変更しない運用）。機体の識別は IP 末尾とチームで行う。
+          </p>
           <p className="text-gray-300 text-sm mt-4 mb-2 font-bold">クローン初回セットアップ（機体ごとに値を変える）:</p>
           <Code>{`ssh sena@172.20.10.10        # クローン直後は必ず .10
 
 sudo nmcli connection modify sena ipv4.addresses 172.20.10.11/24
 sudo bash ~/car/vivi/deploy/set-team.sh a
-sudo hostnamectl set-hostname sena-ras-a
 sudo reboot`}</Code>
           <Note>
             <strong className="text-white">鉄則: クローンの初回起動は単独で行う</strong>。
