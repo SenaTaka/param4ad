@@ -847,6 +847,7 @@ class AutoPilot:
             "left": 0.0, "right": 0.0, "tgt_deg": 0.0,
             "dmin": None, "gap_width": None, "ts": 0.0,
             "param_updated_at": None, "ip": None,
+            "lidar_error": None,  # LiDAR 異常時にメッセージ文字列（WebUIに表示）
         }
         self._status_lock = threading.Lock()
 
@@ -891,7 +892,16 @@ class AutoPilot:
         ok = self.laser.doProcessSimple(self.scan)
         if not ok:
             self.fail["no_scan"] += 1
+            # 約2秒（40回）連続で取れなければ LiDAR 異常として WebUI に通知
+            if self.fail["no_scan"] == 40:
+                with self._status_lock:
+                    self._status["lidar_error"] = "スキャン取得失敗が継続（ケーブル/電源を確認）"
             return False
+
+        if self.fail["no_scan"]:
+            self.fail["no_scan"] = 0
+            with self._status_lock:
+                self._status["lidar_error"] = None
 
         nf = self._pick_window_min(center_signed_deg=0.0, window_deg=FRONT_WINDOW_DEG)
         self.d_front = ema(self.d_front, nf, EMA_ALPHA)
@@ -1131,6 +1141,12 @@ class AutoPilot:
                     break
                 mode = self.mode
 
+            # LiDAR なし（初期化失敗中）: 走行せず待機。API/ステータスは main 側で動き続ける
+            if self.laser is None:
+                self.motor.stop()
+                time.sleep(0.2)
+                continue
+
             if mode != "RUN":
                 self.motor.stop()
                 time.sleep(0.05)
@@ -1257,11 +1273,43 @@ def main():
     laser = None
     with MotorDriver() as motor:  # __exit__ で GPIO.cleanup() を保証（LEDピンも消灯）
         try:
-            laser = init_lidar()
+            # LiDAR 初期化失敗でも落とさない: API 接続・ステータス送信は継続し、
+            # WebUI に lidar_error を表示。バックグラウンドで再接続を試み続ける。
+            _lidar_err = None
+            try:
+                laser = init_lidar()
+            except Exception as e:
+                _lidar_err = f"LiDAR初期化失敗: {type(e).__name__}: {e}"
+                print(f"[LIDAR] {_lidar_err} → LiDARなしで継続（走行不可・API接続は維持）", flush=True)
+
             ap = AutoPilot(motor, laser)
             ap.led = led
             with ap._status_lock:
                 ap._status["ip"] = _ip
+                ap._status["lidar_error"] = _lidar_err
+
+            if laser is None:
+                def _retry_lidar():
+                    nonlocal laser  # 終了時の turnOff() 対象を更新するため
+                    while True:
+                        with ap.lock:
+                            if not ap.running:
+                                return
+                        time.sleep(10.0)
+                        try:
+                            l = init_lidar()
+                        except Exception as e:
+                            with ap._status_lock:
+                                ap._status["lidar_error"] = f"LiDAR初期化失敗: {type(e).__name__}: {e}"
+                            continue
+                        laser = l
+                        ap.laser = l
+                        with ap._status_lock:
+                            ap._status["lidar_error"] = None
+                        print("[LIDAR] 再接続に成功しました（走行可能）", flush=True)
+                        return
+                threading.Thread(target=_retry_lidar, daemon=True).start()
+                print("[LIDAR] 再接続リトライスレッド開始（10秒ごと）", flush=True)
 
             th = threading.Thread(target=ap.loop, daemon=True)
             th.start()

@@ -246,6 +246,16 @@ function RaspiStatusPanel({ status, invertMotor, invertSteer }: {
         </div>
       </div>
 
+      {connected && status?.lidar_error && (
+        <div className="mb-3 flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-2">
+          <span className="text-red-400 text-sm leading-none mt-0.5">⚠</span>
+          <div>
+            <p className="text-xs font-bold text-red-300">LiDAR エラー（走行不可）</p>
+            <p className="text-[11px] font-mono text-red-300/80 break-all">{status.lidar_error}</p>
+          </div>
+        </div>
+      )}
+
       {!connected ? (
         <p className="text-xs text-gray-600 font-mono text-center py-2">ラズパイからのデータなし</p>
       ) : (

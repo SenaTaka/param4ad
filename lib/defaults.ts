@@ -53,6 +53,7 @@ export type RaspiStatus = {
   ts: number
   param_updated_at: number | null
   ip?: string | null
+  lidar_error?: string | null
 }
 
 type ParamSchema = {
