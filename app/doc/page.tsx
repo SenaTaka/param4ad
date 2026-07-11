@@ -56,9 +56,18 @@ sudo bash deploy/add-wifi.sh "iPhone-sena" "hotspotpass" 30`}</Code>
           <ul className="text-gray-300 text-sm mt-3 space-y-1">
             <li><K>優先度</K> 数字が大きいほど優先。複数の電波が届く場所では高い方に接続</li>
             <li><K>優先度の変更</K> <M>sudo nmcli connection modify &quot;SSID&quot; connection.autoconnect-priority 100</M></li>
-            <li><K>確認</K> <M>nmcli -f NAME,AUTOCONNECT-PRIORITY connection show</M> / <M>nmcli device wifi list</M>（見えている電波）</li>
+            <li><K>確認</K> <M>nmcli -f NAME,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show</M> / <M>nmcli device wifi list</M>（見えている電波）</li>
             <li><K>削除</K> <M>sudo nmcli connection delete &quot;SSID&quot;</M></li>
           </ul>
+          <p className="text-gray-300 text-sm mt-4 mb-2 font-bold">mirai-nomachi（自動接続OFFで登録済み）:</p>
+          <Code>{`# 自動接続を有効にする
+sudo nmcli connection modify "mirai-nomachi" connection.autoconnect yes
+
+# 自動接続はOFFのまま、その場で1回だけ接続する
+sudo nmcli connection up "mirai-nomachi"
+
+# 自動接続を無効に戻す
+sudo nmcli connection modify "mirai-nomachi" connection.autoconnect no`}</Code>
           <Note>
             優先度が効くのは<strong className="text-white">接続先を選ぶ瞬間（起動時・切断時）だけ</strong>。
             スマホ優先にしたい場合は「ホットスポットをONにしてからラズパイの電源を入れる」こと。
