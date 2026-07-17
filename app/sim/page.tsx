@@ -6,8 +6,8 @@ import {
   DEFAULT_SIM_PARAMS,
   type RobotState, type FTGResult, type SimParams,
 } from "@/lib/ftg-sim"
-import type { Robot } from "@/app/api/robots/route"
 import { DEFAULT_PARAMS, type Params } from "@/lib/defaults"
+import { TEAMS } from "@/lib/keys"
 import { COURSES, getCourse, type Course } from "./courses"
 import { drawFrame, drawRaceFrame, type Layers, type TrailPoint } from "./draw"
 import ParamPanel, { type SimOnly } from "./ParamPanel"
@@ -16,7 +16,7 @@ import ParamPanel, { type SimOnly } from "./ParamPanel"
 // （12m 幅の周回コースで従来の 65px/m と一致）
 const CANVAS_W = 780
 
-const TEAM_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#facc15"]
+const TEAM_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#facc15", "#c084fc"]
 
 // 12Hz: matches real LiDAR scan rate constraint in param1.py
 const CTRL_HZ = 12
@@ -26,7 +26,7 @@ const CTRL_DT_MS = 1000 / CTRL_HZ
 type RacePhase = "idle" | "setup" | "countdown" | "running" | "finished"
 
 type RaceRobot = {
-  robotId: string
+  teamId: string
   name: string
   color: string
   simParams: SimParams
@@ -95,8 +95,8 @@ export default function SimPage() {
   const raceStartAtRef = useRef(0)  // sprint: race clock start (countdown end)
 
   const [racePhase,       setRacePhase]       = useState<RacePhase>("idle")
-  const [availableRobots, setAvailableRobots] = useState<Robot[]>([])
-  const [selectedIds,     setSelectedIds]     = useState<string[]>([])
+  // 参加チーム（デフォルト: A / B / C）
+  const [selectedIds,     setSelectedIds]     = useState<string[]>(["a", "b", "c"])
   const [totalLaps,       setTotalLaps]       = useState(3)
   const [countdown,       setCountdown]       = useState(0)
   const [raceDisplay,     setRaceDisplay]     = useState<RaceRobot[]>([])
@@ -265,27 +265,19 @@ export default function SimPage() {
     resetRun(c)
   }, [resetRun])
 
-  const openRaceSetup = useCallback(async () => {
+  const openRaceSetup = useCallback(() => {
     setRunning(false)
     runningRef.current = false
-    try {
-      const res = await fetch("/api/robots")
-      const data: Robot[] = await res.json()
-      setAvailableRobots(data)
-      setSelectedIds(data.slice(0, 2).map(r => r.id))
-    } catch {
-      setAvailableRobots([])
-      setSelectedIds([])
-    }
     raceModeRef.current = "setup"
     setRacePhase("setup")
   }, [])
 
   const startRace = useCallback(async () => {
     if (selectedIds.length === 0) return
+    // 各チームの保存済みパラメータで走らせる
     const results = await Promise.all(
       selectedIds.map(id =>
-        fetch(`/api/params?robot=${encodeURIComponent(id)}`)
+        fetch(`/api/params?team=${encodeURIComponent(id)}`)
           .then(r => r.json() as Promise<Params>)
           .catch(() => null)
       )
@@ -304,8 +296,8 @@ export default function SimPage() {
         heading: h,
       }
       return {
-        robotId: id,
-        name: availableRobots.find(r => r.id === id)?.name ?? id,
+        teamId: id,
+        name: `チーム${id.toUpperCase()}`,
         color: TEAM_COLORS[i % TEAM_COLORS.length],
         simParams: sp,
         state: { ...startState },
@@ -327,7 +319,7 @@ export default function SimPage() {
     totalLapsRef.current = course.raceMode === "sprint" ? 1 : totalLaps
     setRaceDisplay([...robots])
     setRacePhase("countdown")
-  }, [selectedIds, availableRobots, totalLaps, course.raceMode])
+  }, [selectedIds, totalLaps, course.raceMode])
 
   const stopRace = useCallback(() => {
     raceModeRef.current = "idle"
@@ -431,25 +423,20 @@ export default function SimPage() {
           <div className="bg-[#0b1828] border border-[#1a3048] rounded-xl p-4 space-y-4">
             <h2 className="text-sm font-bold text-cyan-400 font-mono">レースセットアップ</h2>
 
-            {availableRobots.length === 0 ? (
-              <p className="text-sm text-gray-400">
-                ロボットが登録されていません。パラメータページからロボットを登録してください。
-              </p>
-            ) : (
-              <>
+            <>
                 <div>
-                  <p className="text-xs text-gray-500 mb-2 font-mono">参加チームを選択</p>
+                  <p className="text-xs text-gray-500 mb-2 font-mono">参加チームを選択（各チームの保存済みパラメータで走行）</p>
                   <div className="flex flex-wrap gap-2">
-                    {availableRobots.map((robot) => {
-                      const idx = selectedIds.indexOf(robot.id)
+                    {TEAMS.map((team) => {
+                      const idx = selectedIds.indexOf(team)
                       const selected = idx !== -1
                       return (
                         <button
-                          key={robot.id}
+                          key={team}
                           onClick={() => setSelectedIds(prev =>
-                            prev.includes(robot.id)
-                              ? prev.filter(id => id !== robot.id)
-                              : [...prev, robot.id]
+                            prev.includes(team)
+                              ? prev.filter(id => id !== team)
+                              : [...prev, team]
                           )}
                           className={`min-h-[44px] px-4 rounded-xl text-sm font-medium transition-all active:scale-[0.97] flex items-center gap-2 ${
                             selected
@@ -465,7 +452,7 @@ export default function SimPage() {
                                 : "#4b5563",
                             }}
                           />
-                          {robot.name}
+                          チーム{team.toUpperCase()}
                         </button>
                       )
                     })}
@@ -506,7 +493,6 @@ export default function SimPage() {
                   🏁 スタート
                 </button>
               </>
-            )}
           </div>
         )}
 
@@ -520,7 +506,7 @@ export default function SimPage() {
             </h2>
             <div className="space-y-2">
               {leaderboard.map((robot, rank) => (
-                <div key={robot.robotId} className="flex items-center gap-3">
+                <div key={robot.teamId} className="flex items-center gap-3">
                   <span className="text-xs font-mono text-gray-500 w-4 shrink-0">{rank + 1}</span>
                   <span
                     className="inline-block w-3 h-3 rounded-full shrink-0"
@@ -557,7 +543,7 @@ export default function SimPage() {
                   {isSprint ? "ゴールタイム" : "全ラップタイム"}
                 </p>
                 {leaderboard.map(robot => (
-                  <div key={robot.robotId} className="text-xs font-mono">
+                  <div key={robot.teamId} className="text-xs font-mono">
                     <span style={{ color: robot.color }} className="font-semibold">{robot.name}</span>
                     <span className="text-gray-500 ml-2">
                       {robot.lapTimes.length > 0
