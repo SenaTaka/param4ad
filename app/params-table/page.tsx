@@ -7,6 +7,41 @@ import type { ParamsOverview } from "@/app/api/params-overview/route"
 
 const POLL_MS = 5000
 
+// TeamController.tsx の GROUPS と同じ日本語ラベル（SPEED_MIN のみ UI 未掲載のため独自）
+const PARAM_LABELS: Record<keyof Params, string> = {
+  FGM_ENABLE: "自動運転 ON/OFF",
+  FGM_FOV_DEG: "前を見る広さ",
+  FGM_BIN_DEG: "角度の細かさ",
+  FGM_SMOOTH_WIN: "距離のなめらかさ",
+  FGM_CLEAR_TH: "かべとみなす距離",
+  FGM_MIN_GAP_DEG: "通れる隙間の最小幅",
+  FGM_TARGET: "目指す場所",
+  FGM_BUBBLE_RADIUS: "危険ゾーンの大きさ",
+  FGM_BUBBLE_MIN_DEG: "危険ゾーン 最小角度",
+  FGM_BUBBLE_MAX_DEG: "危険ゾーン 最大角度",
+  KP_GAP_ANGLE: "ハンドルの切れ味",
+  MAX_STEER: "ハンドルの最大量",
+  BASE_SPEED: "ふつうのスピード",
+  SPEED_MIN: "最小スピード",
+  SPEED_MAX: "最大スピード",
+  TURN_SPEED: "曲がれないときのスピード",
+  SPEED_STEER_DROP: "曲がるほど遅くなる量",
+  SPEED_FRONT_DROP: "前が近いほど遅くなる量",
+  FRONT_SLOW: "減速を始める距離",
+  FRONT_STOP: "ほぼ止まる距離",
+  PIVOT_ENABLE: "その場回転 ON/OFF",
+  PIVOT_STEER_TH: "その場回転になる曲がり具合",
+  PIVOT_SOFT_TH: "その場回転に切り替え始める量",
+  PIVOT_MIN_SPEED: "その場回転中の最低スピード",
+  FORWARD_DEG: "センサーの前方向補正",
+  LIDAR_DX: "センサーの前後ずれ",
+  LIDAR_DY: "センサーの左右ずれ",
+  EMA_ALPHA: "距離データのなめらかさ",
+  FRONT_WINDOW_DEG: "前方として見る角度の幅",
+  MOTOR_FREQ: "モーターの振動数",
+  SPEED_CMD_SCALE: "速度の調整倍率",
+}
+
 export default function ParamsTablePage() {
   const [data, setData] = useState<ParamsOverview | null>(null)
   const [error, setError] = useState(false)
@@ -90,6 +125,7 @@ function ParamsTable({ data }: { data: ParamsOverview }) {
             <tr key={k} className="hover:bg-white/[0.03]">
               <td className="sticky left-0 z-10 bg-[#0b1828] border-b border-r border-[#1a3048] px-3 py-1.5 text-gray-300 whitespace-nowrap">
                 {k}
+                <span className="text-gray-500 ml-1">（{PARAM_LABELS[k]}）</span>
               </td>
               <td className="border-b border-r border-[#1a3048] px-3 py-1.5 text-center text-gray-500 whitespace-nowrap">
                 {formatValue(data.defaults[k])}
