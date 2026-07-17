@@ -1,6 +1,8 @@
 // FTG simulator — pure logic, no DOM
 // Faithfully reproduces param1.py logic
 
+import { DEFAULT_PARAMS, type Params } from "@/lib/defaults"
+
 export type Vec2 = { x: number; y: number }
 export type Wall = [Vec2, Vec2]
 
@@ -12,6 +14,7 @@ export interface RobotState {
 
 export interface SimParams {
   // FTG core
+  fgmEnable: boolean
   fovDeg: number
   binDeg: number
   smoothWin: number
@@ -40,6 +43,8 @@ export interface SimParams {
   pivotSoftTh: number
   pivotMinSpeed: number
   // Hardware (reproduced from param1.py)
+  lidarDx: number        // LIDAR_DX: axle→LiDAR offset, forward+ (m)
+  lidarDy: number        // LIDAR_DY: axle→LiDAR offset, left+ (m)
   emaAlpha: number       // EMA_ALPHA: smooths d_front across scans
   frontWindowDeg: number // FRONT_WINDOW_DEG: angular window for front dist
   speedCmdScale: number  // SPEED_CMD_SCALE: applied at motor driver level
@@ -49,8 +54,10 @@ export interface SimParams {
 }
 
 export interface FTGResult {
-  ls: number
+  ls: number             // motor input after SPEED_CMD_SCALE (feeds stepRobot)
   rs: number
+  cmdLeft: number        // command before SPEED_CMD_SCALE = what raspi status reports
+  cmdRight: number
   steer: number
   ranges: number[]
   angles: number[]
@@ -59,43 +66,62 @@ export interface FTGResult {
   tgtDeg: number | null
   dmin: number | null
   amin: number | null
-  frontDist: number  // EMA'd value — pass back as prevFrontDist next call
-}
-
-export const DEFAULT_SIM_PARAMS: SimParams = {
-  fovDeg:         90,     // FGM_FOV_DEG
-  binDeg:         2,      // FGM_BIN_DEG
-  smoothWin:      9,      // FGM_SMOOTH_WIN
-  clearTh:        1.4,    // FGM_CLEAR_TH
-  minGapDeg:      4,      // FGM_MIN_GAP_DEG
-  target:         "FAR",  // FGM_TARGET
-  bubbleRadius:   0.27,   // FGM_BUBBLE_RADIUS
-  bubbleMinDeg:   4,      // FGM_BUBBLE_MIN_DEG
-  bubbleMaxDeg:   25,     // FGM_BUBBLE_MAX_DEG
-  kp:             0.9,    // KP_GAP_ANGLE
-  maxSteer:       0.85,   // MAX_STEER
-  baseSpeed:      0.5,    // BASE_SPEED
-  speedMin:       0.0,    // SPEED_MIN
-  speedMax:       0.5,    // SPEED_MAX
-  turnSpeed:      0.475,  // TURN_SPEED (0.95*0.5)
-  speedSteerDrop: 0.1,    // SPEED_STEER_DROP
-  speedFrontDrop: 0.4,    // SPEED_FRONT_DROP
-  frontSlow:      0.73,   // FRONT_SLOW (0.55+LIDAR_DX)
-  frontStop:      0.38,   // FRONT_STOP (0.2+LIDAR_DX)
-  pivotEnable:    true,   // PIVOT_ENABLE
-  pivotSteerTh:   0.98,   // PIVOT_STEER_TH
-  pivotSoftTh:    0.90,   // PIVOT_SOFT_TH
-  pivotMinSpeed:  0.0,    // PIVOT_MIN_SPEED
-  emaAlpha:       0.45,   // EMA_ALPHA
-  frontWindowDeg: 4,      // FRONT_WINDOW_DEG
-  speedCmdScale:  1.1,    // SPEED_CMD_SCALE
-  slipEnable:     false,
-  slipK:          0.3,
+  frontDist: number | null  // EMA'd value — pass back as prevFrontDist next call (null until first valid scan)
 }
 
 const MAX_VALID = 12.0
-const WHEEL_BASE = 0.18   // m (LIDAR_DX used as proxy for wheelbase)
+const WHEEL_BASE = 0.18   // m
 const REAL_SPEED = 1.5    // m/s at speed=1.0
+
+// odd(): matches param1.py — FGM_SMOOTH_WIN is forced odd
+function odd(n: number): number {
+  const i = Math.round(n)
+  if (i <= 0) return 0
+  return i % 2 === 0 ? i + 1 : i
+}
+
+// Params (real robot keys, lib/defaults.ts) → SimParams.
+// Single source of truth: defaults.ts. FORWARD_DEG / MOTOR_FREQ have no effect in sim.
+export function paramsToSim(
+  p: Params,
+  simOnly: { slipEnable: boolean; slipK: number } = { slipEnable: false, slipK: 0.3 }
+): SimParams {
+  return {
+    fgmEnable:      p.FGM_ENABLE,
+    fovDeg:         p.FGM_FOV_DEG,
+    binDeg:         p.FGM_BIN_DEG,
+    smoothWin:      odd(p.FGM_SMOOTH_WIN),
+    clearTh:        p.FGM_CLEAR_TH,
+    minGapDeg:      p.FGM_MIN_GAP_DEG,
+    target:         p.FGM_TARGET as "FAR" | "MID",
+    bubbleRadius:   p.FGM_BUBBLE_RADIUS,
+    bubbleMinDeg:   p.FGM_BUBBLE_MIN_DEG,
+    bubbleMaxDeg:   p.FGM_BUBBLE_MAX_DEG,
+    kp:             p.KP_GAP_ANGLE,
+    maxSteer:       p.MAX_STEER,
+    baseSpeed:      p.BASE_SPEED,
+    speedMin:       p.SPEED_MIN,
+    speedMax:       p.SPEED_MAX,
+    turnSpeed:      p.TURN_SPEED,
+    speedSteerDrop: p.SPEED_STEER_DROP,
+    speedFrontDrop: p.SPEED_FRONT_DROP,
+    frontSlow:      p.FRONT_SLOW,
+    frontStop:      p.FRONT_STOP,
+    pivotEnable:    p.PIVOT_ENABLE,
+    pivotSteerTh:   p.PIVOT_STEER_TH,
+    pivotSoftTh:    p.PIVOT_SOFT_TH,
+    pivotMinSpeed:  p.PIVOT_MIN_SPEED,
+    lidarDx:        p.LIDAR_DX,
+    lidarDy:        p.LIDAR_DY,
+    emaAlpha:       p.EMA_ALPHA,
+    frontWindowDeg: p.FRONT_WINDOW_DEG,
+    speedCmdScale:  p.SPEED_CMD_SCALE,
+    slipEnable:     simOnly.slipEnable,
+    slipK:          simOnly.slipK,
+  }
+}
+
+export const DEFAULT_SIM_PARAMS: SimParams = paramsToSim(DEFAULT_PARAMS)
 
 function clamp(x: number, lo: number, hi: number) {
   return x < lo ? lo : x > hi ? hi : x
@@ -127,23 +153,43 @@ export function raycast(origin: Vec2, angleRad: number, walls: Wall[], maxRange 
   return best
 }
 
-// Matches _fgm_build_ranges() in param1.py
+// Matches _fgm_build_ranges() + _pick_window_min() in param1.py.
+// Rays are cast from the LiDAR origin (axle + LIDAR_DX forward, LIDAR_DY left),
+// then every hit is converted to axle-frame polar via lidar_point_to_axle_polar().
+// frontRaw is the pre-smoothing min distance within ±frontWindowDeg (axle frame).
 export function buildRanges(robot: RobotState, walls: Wall[], p: SimParams) {
+  const h = robot.heading
+  // world is y-down: forward = (cos h, sin h), left = (sin h, -cos h)
+  const lx = robot.x + p.lidarDx * Math.cos(h) + p.lidarDy * Math.sin(h)
+  const ly = robot.y + p.lidarDx * Math.sin(h) - p.lidarDy * Math.cos(h)
+
   const half = p.fovDeg / 2
   const nbin = Math.round(p.fovDeg / p.binDeg) + 1
   const ranges = new Array<number>(nbin).fill(MAX_VALID)
   const angles: number[] = []
+  for (let i = 0; i < nbin; i++) angles.push(-half + i * p.binDeg)
 
-  for (let i = 0; i < nbin; i++) {
-    angles.push(-half + i * p.binDeg)
-  }
+  let frontRaw: number | null = null
 
-  for (let i = 0; i < nbin; i++) {
-    const signedDeg = angles[i]
-    // signed deg: +left in robot frame. robot heading: 0=right, CCW positive.
-    const worldAngle = robot.heading - (signedDeg * Math.PI) / 180
-    const dist = raycast({ x: robot.x, y: robot.y }, worldAngle, walls)
-    if (dist < ranges[i]) ranges[i] = dist
+  // Sweep the full LiDAR revolution finer than the bin width so that the
+  // lidar→axle angle shift cannot leave holes in the bins.
+  const step = Math.min(p.binDeg, 1) / 2
+  for (let a = -180; a < 180; a += step) {
+    const th = (a * Math.PI) / 180                 // lidar-frame signed angle, +left
+    const d = raycast({ x: lx, y: ly }, h - th, walls)
+    if (d >= MAX_VALID) continue                   // matches: dist < max_valid
+    // lidar frame → axle frame (param1.py lidar_point_to_axle_polar)
+    const xa = d * Math.cos(th) + p.lidarDx
+    const ya = d * Math.sin(th) + p.lidarDy
+    const da = Math.hypot(xa, ya)
+    const sa = (Math.atan2(ya, xa) * 180) / Math.PI  // axle-frame signed deg, +left
+
+    if (Math.abs(sa) <= p.frontWindowDeg && (frontRaw === null || da < frontRaw)) {
+      frontRaw = da
+    }
+    if (sa < -half - p.binDeg / 2 || sa > half + p.binDeg / 2) continue
+    const idx = Math.round((sa + half) / p.binDeg)
+    if (idx >= 0 && idx < nbin && da < ranges[idx]) ranges[idx] = da
   }
 
   // median smooth (matches FGM_SMOOTH_WIN logic in param1.py)
@@ -157,10 +203,10 @@ export function buildRanges(robot: RobotState, walls: Wall[], p: SimParams) {
       const seg = ranges.slice(lo, hi).sort((a, b) => a - b)
       sm[i] = seg[Math.floor(seg.length / 2)]
     }
-    return { ranges: sm, angles }
+    return { ranges: sm, angles, frontRaw }
   }
 
-  return { ranges, angles }
+  return { ranges, angles, frontRaw }
 }
 
 // Matches _fgm_apply_bubble() in param1.py (single closest point)
@@ -268,26 +314,37 @@ function applyMotorScale(v: number, p: SimParams): number {
   return Math.min(v * p.speedCmdScale, 1.0)
 }
 
+// Matches ema() in param1.py: first call returns the new value unchanged,
+// missing new value keeps the previous one.
+function emaFront(prev: number | null, next: number | null, alpha: number): number | null {
+  if (next === null) return prev
+  if (prev === null) return next
+  return alpha * next + (1 - alpha) * prev
+}
+
 // Matches _fgm_control() in param1.py
-// prevFrontDist: EMA state from previous call (pass frontDist from last FTGResult)
+// prevFrontDist: EMA state from previous call (pass frontDist from last FTGResult; null on reset)
 export function ftgControl(
   robot: RobotState,
   walls: Wall[],
   p: SimParams,
-  prevFrontDist: number = MAX_VALID
+  prevFrontDist: number | null = null
 ): FTGResult {
-  const { ranges, angles } = buildRanges(robot, walls, p)
+  const { ranges, angles, frontRaw } = buildRanges(robot, walls, p)
   const { ranges2, dmin, amin } = applyBubble(ranges, angles, p)
-  const gap = findMaxGap(ranges2, angles, p)
+  const frontDist = emaFront(prevFrontDist, frontRaw, p.emaAlpha)
 
-  // d_front: pick min from center bins, apply EMA — matches _pick_window_min() + ema()
-  const centerI = Math.floor(ranges.length / 2)
-  const hw = Math.max(1, Math.floor(p.frontWindowDeg / p.binDeg))
-  let frontRaw = MAX_VALID
-  for (let i = Math.max(0, centerI - hw); i <= Math.min(ranges.length - 1, centerI + hw); i++) {
-    if (ranges[i] < frontRaw) frontRaw = ranges[i]
+  // FGM_ENABLE off: drive straight at BASE_SPEED (matches loop() branch in param1.py)
+  if (!p.fgmEnable) {
+    const cmd = applySpeedLimits(p.baseSpeed, p)
+    const m = applyMotorScale(cmd, p)
+    return {
+      ls: m, rs: m, cmdLeft: cmd, cmdRight: cmd, steer: 0,
+      ranges, angles, ranges2, gap: null, tgtDeg: null, dmin, amin, frontDist,
+    }
   }
-  const frontDist = p.emaAlpha * frontRaw + (1 - p.emaAlpha) * prevFrontDist
+
+  const gap = findMaxGap(ranges2, angles, p)
 
   if (!gap) {
     // NOGAP fallback: steer toward farthest point at TURN_SPEED
@@ -301,15 +358,17 @@ export function ftgControl(
     let [left, right] = mixWithPivot(v, steer, p)
     const m = Math.max(left, right)
     if (m > p.speedMax) { left *= p.speedMax / m; right *= p.speedMax / m }
-    const ls = applyMotorScale(applySpeedLimits(left, p), p)
-    const rs = applyMotorScale(applySpeedLimits(right, p), p)
-    return { ls, rs, steer, ranges, angles, ranges2, gap: null, tgtDeg, dmin, amin, frontDist }
+    const cmdLeft = applySpeedLimits(left, p)
+    const cmdRight = applySpeedLimits(right, p)
+    const ls = applyMotorScale(cmdLeft, p)
+    const rs = applyMotorScale(cmdRight, p)
+    return { ls, rs, cmdLeft, cmdRight, steer, ranges, angles, ranges2, gap: null, tgtDeg, dmin, amin, frontDist }
   }
 
   const { deg: tgtDeg, dist: tgtDist } = pickTarget(ranges2, angles, gap, p)
   const steer = clamp(p.kp * (tgtDeg * Math.PI) / 180, -p.maxSteer, p.maxSteer)
 
-  const frontEff = Math.min(frontDist, tgtDist)
+  const frontEff = Math.min(frontDist ?? MAX_VALID, tgtDist)
   let frontDrop = 0
   if (frontEff < p.frontSlow) {
     frontDrop = clamp((p.frontSlow - frontEff) / Math.max(p.frontSlow - p.frontStop, 1e-3), 0, 1)
@@ -326,10 +385,12 @@ export function ftgControl(
   const m = Math.max(left, right)
   if (m > p.speedMax) { left *= p.speedMax / m; right *= p.speedMax / m }
 
-  const ls = applyMotorScale(applySpeedLimits(left, p), p)
-  const rs = applyMotorScale(applySpeedLimits(right, p), p)
+  const cmdLeft = applySpeedLimits(left, p)
+  const cmdRight = applySpeedLimits(right, p)
+  const ls = applyMotorScale(cmdLeft, p)
+  const rs = applyMotorScale(cmdRight, p)
 
-  return { ls, rs, steer, ranges, angles, ranges2, gap, tgtDeg, dmin, amin, frontDist }
+  return { ls, rs, cmdLeft, cmdRight, steer, ranges, angles, ranges2, gap, tgtDeg, dmin, amin, frontDist }
 }
 
 // stepRobot: pure kinematics + optional tire slip
@@ -360,6 +421,18 @@ export function stepRobot(
     y: robot.y + v * Math.sin(robot.heading) * dt,
     heading: robot.heading - effectiveOmega * dt,
   }
+}
+
+// Wall collision (sim-only): a robot cannot pass through a wall.
+// If the movement segment crosses any wall the position is held in place while
+// the heading update is kept — like a real crash, the robot can pivot free.
+export function collideWithWalls(prev: RobotState, next: RobotState, walls: Wall[]): RobotState {
+  for (const [a, b] of walls) {
+    if (crossesLine(prev, next, a, b)) {
+      return { x: prev.x, y: prev.y, heading: next.heading }
+    }
+  }
+  return next
 }
 
 export function crossesLine(prev: Vec2, curr: Vec2, lineA: Vec2, lineB: Vec2): boolean {
