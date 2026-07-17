@@ -37,6 +37,10 @@ export default function AdminPage() {
           <p className="text-gray-500 text-xs font-mono">
             {error ? "取得エラー — 再試行中…" : data ? "3秒ごとに自動更新" : "読み込み中…"}
           </p>
+          <p className="text-xs font-mono mt-2">
+            <Link href="/params-table" className="text-cyan-400 hover:underline mr-4">全チームパラメータ表 →</Link>
+            <Link href="/code" className="text-cyan-400 hover:underline">コード解説 →</Link>
+          </p>
         </div>
 
         {data?.teams.map(({ team, robots }) => (
