@@ -2,6 +2,9 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
+
+const TEAM_STORAGE_KEY = "last_team"
 
 const TABS = [
   {
@@ -57,9 +60,24 @@ const VALID_TEAMS = new Set(["a", "b", "c", "d", "e"])
 export default function BottomNav() {
   const pathname = usePathname()
 
-  // 現在のチーム（先頭セグメントが a〜e ならそれ、なければ a）
+  // 現在のチーム（先頭セグメントが a〜e ならそれ）
   const firstSeg = pathname.split("/")[1] ?? ""
-  const currentTeam = VALID_TEAMS.has(firstSeg) ? firstSeg : "a"
+
+  // 最後に居たチームを localStorage に記憶し、チーム名を含まないページ
+  // （/sim /explain /doc /code など）から戻っても同じチームへ戻れるようにする
+  const [savedTeam, setSavedTeam] = useState<string | null>(null)
+  useEffect(() => {
+    if (VALID_TEAMS.has(firstSeg)) {
+      localStorage.setItem(TEAM_STORAGE_KEY, firstSeg)
+      setSavedTeam(firstSeg)
+    } else {
+      setSavedTeam(localStorage.getItem(TEAM_STORAGE_KEY))
+    }
+  }, [firstSeg])
+
+  const currentTeam = VALID_TEAMS.has(firstSeg)
+    ? firstSeg
+    : savedTeam && VALID_TEAMS.has(savedTeam) ? savedTeam : "a"
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#0b1828]/95 backdrop-blur-md border-t border-[#1a3048]"
